@@ -465,7 +465,8 @@ def process_excel(uploaded_file):
         start_data_row = curr_row
 
         for row_data in final_rows_list:
-            ws.cell(row=row_data_row := curr_row, column=1, value=row_data["pid"]).alignment = (
+            row_data_row = curr_row
+            ws.cell(row=row_data_row, column=1, value=row_data["pid"]).alignment = (
                 Alignment(horizontal="center")
             )
             ws.cell(

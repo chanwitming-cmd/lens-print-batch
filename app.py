@@ -228,7 +228,6 @@ def process_excel(uploaded_file):
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
     ws_summary.views.sheetView[0].showGridLines = True
 
-    # ตั้งค่าหน้ากระดาษพิมพ์สำหรับ Summary
     ws_summary.page_setup.orientation = ws_summary.ORIENTATION_LANDSCAPE
     ws_summary.page_setup.paperSize = ws_summary.PAPERSIZE_A4
     ws_summary.page_setup.fitToWidth = 1
@@ -236,6 +235,7 @@ def process_excel(uploaded_file):
     ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
     ws_summary.print_title_rows = "1:3"
     ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
+    ws_summary.page_setup.blackAndWhite = True
 
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
@@ -334,7 +334,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา
+    # Tabs รายสาขา (ถอดคอลัมน์ Total Pcs ออกแล้ว)
     # --------------------------------------------------------------------------
     for store_id, group in store_groups:
         store_name = (
@@ -346,7 +346,10 @@ def process_excel(uploaded_file):
         ws = wb_out.create_sheet(title=safe_title)
         ws.views.sheetView[0].showGridLines = True
 
-        # ตั้งค่าหน้ากระดาษพิมพ์สำหรับแต่ละสาขา
+        store_cols = group["col_idx"].tolist()
+        do_nums = group["do_number"].tolist()
+        num_dos = len(do_nums)
+
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
         ws.page_setup.fitToWidth = 1
@@ -354,9 +357,7 @@ def process_excel(uploaded_file):
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.print_title_rows = "1:4"
         ws.sheet_properties.pageSetUpPr.horizontalCentered = True
-
-        store_cols = group["col_idx"].tolist()
-        do_nums = group["do_number"].tolist()
+        ws.page_setup.blackAndWhite = True
 
         ws.cell(row=1, column=1, value="Store ID:").font = Font(
             name="Cordia New", size=11, bold=True
@@ -389,11 +390,7 @@ def process_excel(uploaded_file):
             cell.fill = STEEL_FILL
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        total_col_idx = 5 + len(do_nums)
-        cell = ws.cell(row=4, column=total_col_idx, value="Total Pcs")
-        cell.font = Font(name="Cordia New", size=12, bold=True, color="FFFFFF")
-        cell.fill = STEEL_FILL
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        max_col_idx = 4 + len(do_nums)
 
         store_items = []
         for r_idx in range(item_start_row, item_end_row + 1):
@@ -441,15 +438,7 @@ def process_excel(uploaded_file):
                     row=curr_row, column=c_i, value=q_val if q_val > 0 else None
                 ).alignment = Alignment(horizontal="right")
 
-            first_do_let = get_column_letter(5)
-            last_do_let = get_column_letter(5 + len(do_nums) - 1)
-            ws.cell(
-                row=curr_row,
-                column=total_col_idx,
-                value=f"=SUM({first_do_let}{curr_row}:{last_do_let}{curr_row})",
-            ).alignment = Alignment(horizontal="right")
-
-            for c in range(1, total_col_idx + 1):
+            for c in range(1, max_col_idx + 1):
                 cell = ws.cell(row=curr_row, column=c)
                 cell.font = Font(name="Cordia New", size=11)
                 cell.border = box_border
@@ -477,30 +466,19 @@ def process_excel(uploaded_file):
                 horizontal="right"
             )
 
-        tot_col_letter = get_column_letter(total_col_idx)
-        ws.cell(
-            row=curr_row,
-            column=total_col_idx,
-            value=f"=SUM({tot_col_letter}5:{tot_col_letter}{curr_row-1})",
-        ).font = Font(name="Cordia New", size=12, bold=True)
-        ws.cell(row=curr_row, column=total_col_idx).alignment = Alignment(
-            horizontal="right"
-        )
-
-        for c in range(1, total_col_idx + 1):
+        for c in range(1, max_col_idx + 1):
             cell = ws.cell(row=curr_row, column=c)
             cell.fill = HEADER_FILL
             cell.border = header_border
 
-        ws.column_dimensions["A"].width = 15
-        ws.column_dimensions["B"].width = 25
-        ws.column_dimensions["C"].width = 12
-        ws.column_dimensions["D"].width = 12
+        do_col_w = 12 if num_dos > 5 else 16
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 24
+        ws.column_dimensions["C"].width = 10
+        ws.column_dimensions["D"].width = 10
         for idx_q in range(len(store_cols)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 16
-        ws.column_dimensions[get_column_letter(total_col_idx)].width = 14
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = do_col_w
 
-    # --- เลือก (Select) ทุก Sheet ไว้เพื่อให้กดพิมพ์ครั้งเดียวออกหมดทันที ---
     for sheet in wb_out.worksheets:
         sheet.sheet_view.tabSelected = True
 

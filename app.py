@@ -134,19 +134,15 @@ def parse_num(val):
 
 
 def setup_sheet_page_layout(ws):
-    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 บีบลง 1 หน้าพอดี"""
+    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 ชิดซ้าย ไม่จัดกึ่งกลาง"""
     ws.views.sheetView[0].showGridLines = True
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.blackAndWhite = True
 
-    # บังคับ Fit to 1 page
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 1
-
-    # จัดกึ่งกลางแนวนอน
-    ws.print_options.horizontalCentered = True
+    # บังคับชิดซ้าย (ปิดการจัดกึ่งกลางแนวนอนและแนวตั้ง)
+    ws.print_options.horizontalCentered = False
+    ws.print_options.verticalCentered = False
 
 
 def process_excel(uploaded_file):
@@ -566,7 +562,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ตั้งค่าแนวนอนและ 1 หน้าอัตโนมัติ<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ตั้งค่าแนวนอนชิดซ้ายอัตโนมัติ<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -581,7 +577,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และล็อกค่าตั้งค่ากระดาษพิมพ์..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับตารางชิดซ้ายมุมบน..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

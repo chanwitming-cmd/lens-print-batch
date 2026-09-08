@@ -257,12 +257,12 @@ def process_excel(uploaded_file):
         horizontal="center", vertical="center"
     )
 
-    # คำอธิบายสัญลักษณ์สี Sheet (Color Legend)
+    # คำอธิบายสัญลักษณ์สี Sheet (Color Legend - ปรับปรุงข้อความและเกณฑ์ 35 แถว)
     ws_summary.cell(
         row=1, column=7, value="🟢 Tab สีเขียว:"
     ).font = Font(name="Cordia New", size=11, bold=True)
     cell_lg_g = ws_summary.cell(
-        row=1, column=8, value="สั่งพิมพ์รวมได้ทันที (ไม่เกิน 8 DO / 30 แถว)"
+        row=1, column=8, value="สั่งพิมพ์รวมได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)"
     )
     cell_lg_g.font = Font(name="Cordia New", size=11)
     cell_lg_g.fill = fill_green
@@ -271,7 +271,7 @@ def process_excel(uploaded_file):
         row=2, column=7, value="🔴 Tab สีแดง:"
     ).font = Font(name="Cordia New", size=11, bold=True)
     cell_lg_r = ws_summary.cell(
-        row=2, column=8, value="ต้องสั่งพิมพ์แยกทีละ Sheet (เกิน 8 DO / 30 แถว)"
+        row=2, column=8, value="ต้องสั่งพิมพ์แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)"
     )
     cell_lg_r.font = Font(name="Cordia New", size=11)
     cell_lg_r.fill = fill_peach
@@ -357,10 +357,10 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["D"].width = 16
     ws_summary.column_dimensions["E"].width = 22
     ws_summary.column_dimensions["G"].width = 16
-    ws_summary.column_dimensions["H"].width = 45
+    ws_summary.column_dimensions["H"].width = 48
 
     # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา (แยกสาขาเกินไว้หน้าสุด + สาขาปกติต่อท้าย)
+    # 3. คัดแยกประเภทสาขา (เกณฑ์ใหม่: >35 แถว หรือ >8 DO เป็น Tab สีแดง)
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -375,7 +375,7 @@ def process_excel(uploaded_file):
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
-        if active_items_count > 30 or num_dos > 8:
+        if active_items_count > 35 or num_dos > 8:
             priority_stores.append((store_id, group, True))
         else:
             normal_stores.append((store_id, group, False))
@@ -405,7 +405,7 @@ def process_excel(uploaded_file):
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            if do_item_count > 30:
+            if do_item_count > 35:
                 heavy_dos_info.append((c_idx, do_n))
             else:
                 normal_dos_info.append((c_idx, do_n))
@@ -628,7 +628,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + แสดงคำอธิบายสีในหน้า Summary<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + แบ่งหน้าพิมพ์ 35 แถวและ 8 DO<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -643,7 +643,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และสร้างหน้า Summary..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับแต่งระยะจัดพิมพ์..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
@@ -659,3 +659,4 @@ if uploaded_file is not None:
                 st.error(
                     f"❌ เกิดข้อผิดพลาดในการประมวลผล โปรดตรวจสอบโครงสร้างไฟล์: {e}"
                 )
+

@@ -199,7 +199,6 @@ def process_excel(uploaded_file):
     wb_out = openpyxl.Workbook()
     wb_out.remove(wb_out.active)
 
-    # นิยามรูปแบบเส้นตารางแบบคลีน (ไม่มีสีพื้นหลัง)
     thin_black = Side(border_style="thin", color="000000")
     double_black = Side(border_style="double", color="000000")
 
@@ -227,6 +226,7 @@ def process_excel(uploaded_file):
     ws_summary.page_setup.fitToWidth = 1
     ws_summary.page_setup.fitToHeight = 1
     ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
+    ws_summary.page_setup.usePrinterDefaults = False
 
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
@@ -336,13 +336,11 @@ def process_excel(uploaded_file):
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
-        # เงื่อนไข: เกิน 28 รายการ หรือ เกิน 8 คอลัมน์ (DO)
         if active_items_count > 28 or num_dos > 8:
             priority_stores.append((store_id, group, True))
         else:
             normal_stores.append((store_id, group, False))
 
-    # รวมรายการโดยเอาสาขาที่เกินขึ้นก่อน แล้วตามด้วยสาขาปกติ
     sorted_store_groups = priority_stores + normal_stores
 
     # --------------------------------------------------------------------------
@@ -423,17 +421,12 @@ def process_excel(uploaded_file):
         ws = wb_out.create_sheet(title=sheet_title)
         ws.views.sheetView[0].showGridLines = True
 
-        # ใส่สี Tab Sheet (พาสเทลอ่อนๆ สบายตา)
         if is_heavy:
-            ws.sheet_properties.tabColor = (
-                "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล (สำหรับสาขาที่เกิน)
-            )
+            ws.sheet_properties.tabColor = "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล
         else:
-            ws.sheet_properties.tabColor = (
-                "E2EFDA"  # สีเขียวอ่อนพาสเทล (สำหรับสาขาปกติ)
-            )
+            ws.sheet_properties.tabColor = "E2EFDA"  # สีเขียวอ่อนพาสเทล
 
-        # ตั้งค่าการจัดหน้ากระดาษ: แนวนอน A4 + ขาวดำ + บังคับ 1 หน้าสำหรับทุก Sheet
+        # ตั้งค่าการจัดหน้ากระดาษ + บังคับไม่ใช้ค่า Print Default ของเครื่องพิมพ์
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
         ws.page_setup.blackAndWhite = True
@@ -441,10 +434,10 @@ def process_excel(uploaded_file):
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 1
         ws.sheet_properties.pageSetUpPr.horizontalCentered = True
+        ws.page_setup.usePrinterDefaults = False
 
         curr_row = 1
 
-        # Header ข้อมูลสาขา
         ws.cell(
             row=curr_row, column=1, value=f"Store ID: {store_id}"
         ).font = Font(name="Cordia New", size=11, bold=True)
@@ -453,7 +446,6 @@ def process_excel(uploaded_file):
         ).font = Font(name="Cordia New", size=11, bold=True)
         curr_row += 1
 
-        # Header ตาราง (ไม่มีสีพื้นหลัง ใช้ตัวหนา + ตีเส้นขอบ)
         base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
         for col_i, h_text in enumerate(base_headers, 1):
             cell = ws.cell(row=curr_row, column=col_i, value=h_text)
@@ -476,7 +468,6 @@ def process_excel(uploaded_file):
         curr_row += 1
         start_data_row = curr_row
 
-        # เขียนข้อมูลรายการเลนส์
         for row_data in final_rows_list:
             ws.cell(row=curr_row, column=1, value=row_data["pid"]).alignment = (
                 Alignment(horizontal="center")
@@ -514,7 +505,6 @@ def process_excel(uploaded_file):
 
         end_data_row = curr_row - 1
 
-        # แถว Grand Total ท้ายตาราง
         ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
             name="Cordia New", size=11, bold=True
         )
@@ -566,7 +556,7 @@ def process_excel(uploaded_file):
 st.markdown(
     """
     <div class="header-box">
-        <div class="header-icon">🌐</div>
+        <div class="header-icon">👓</div>
         <div class="header-title">Optics Lens Dispatcher System</div>
         <div class="header-subtitle">ระบบจัดกลุ่มและสรุปรายการจัดส่งเลนส์แยกสาขาอัตโนมัติ</div>
     </div>
@@ -579,8 +569,8 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + Sort สายตาแยกตาม DO<br>
-        3. ดาวน์โหลดไฟล์ Excel สรุปผลพร้อมนำไปใช้งานได้ทันที
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ฝังค่าพิมพ์หน้าเดียวอัตโนมัติ<br>
+        3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเลือกสั่งพิมพ์กลุ่มสีเขียวได้ทันที
     </div>
 """,
     unsafe_allow_html=True,
@@ -594,7 +584,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และประมวลผลตารางข้อมูล..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และล็อกค่าตั้งค่ากระดาษพิมพ์..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

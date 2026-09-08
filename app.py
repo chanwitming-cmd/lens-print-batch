@@ -199,28 +199,18 @@ def process_excel(uploaded_file):
     wb_out = openpyxl.Workbook()
     wb_out.remove(wb_out.active)
 
-    NAVY_FILL = PatternFill(
-        start_color="1F4E78", end_color="1F4E78", fill_type="solid"
-    )
-    STEEL_FILL = PatternFill(
-        start_color="2F5597", end_color="2F5597", fill_type="solid"
-    )
-    HEADER_FILL = PatternFill(
-        start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
-    )
-    ZEBRA_FILL = PatternFill(
-        start_color="F9FBFD", end_color="F9FBFD", fill_type="solid"
-    )
+    # นิยามรูปแบบเส้นตารางแบบคลีน (ไม่มีสีพื้นหลัง)
+    thin_black = Side(border_style="thin", color="000000")
+    double_black = Side(border_style="double", color="000000")
 
-    thin_side = Side(border_style="thin", color="D9D9D9")
     box_border = Border(
-        left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
+        left=thin_black, right=thin_black, top=thin_black, bottom=thin_black
     )
     header_border = Border(
-        left=thin_side,
-        right=thin_side,
-        top=Side(border_style="medium", color="1F4E78"),
-        bottom=Side(border_style="medium", color="1F4E78"),
+        left=thin_black, right=thin_black, top=thin_black, bottom=thin_black
+    )
+    total_border = Border(
+        left=thin_black, right=thin_black, top=thin_black, bottom=double_black
     )
 
     # --------------------------------------------------------------------------
@@ -229,14 +219,22 @@ def process_excel(uploaded_file):
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
     ws_summary.views.sheetView[0].showGridLines = True
 
+    # ตั้งค่ากระดาษพิมพ์แบบคลีนแนวนอน + ล็อคพิมพ์ 1 หน้า
+    ws_summary.page_setup.orientation = ws_summary.ORIENTATION_LANDSCAPE
+    ws_summary.page_setup.paperSize = ws_summary.PAPERSIZE_A4
+    ws_summary.page_setup.blackAndWhite = True
+    ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
+    ws_summary.page_setup.fitToWidth = 1
+    ws_summary.page_setup.fitToHeight = 1
+    ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
+
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
         "สรุปรายการจัดส่งเลนส์ประจำรอบ (Store Dispatch Summary)"
     )
     ws_summary["A1"].font = Font(
-        name="Cordia New", size=18, bold=True, color="FFFFFF"
+        name="Cordia New", size=18, bold=True, color="000000"
     )
-    ws_summary["A1"].fill = NAVY_FILL
     ws_summary["A1"].alignment = Alignment(
         horizontal="center", vertical="center"
     )
@@ -250,9 +248,9 @@ def process_excel(uploaded_file):
     ]
     for col_num, h_text in enumerate(headers_summary, 1):
         cell = ws_summary.cell(row=3, column=col_num, value=h_text)
-        cell.font = Font(name="Cordia New", size=13, bold=True, color="FFFFFF")
-        cell.fill = STEEL_FILL
+        cell.font = Font(name="Cordia New", size=13, bold=True, color="000000")
         cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = header_border
 
     store_groups = list(stores_df.groupby("store_id", sort=False))
 
@@ -290,8 +288,6 @@ def process_excel(uploaded_file):
             cell = ws_summary.cell(row=row_idx, column=c)
             cell.font = Font(name="Cordia New", size=12)
             cell.border = box_border
-            if idx % 2 == 0:
-                cell.fill = ZEBRA_FILL
         row_idx += 1
         idx += 1
 
@@ -316,8 +312,7 @@ def process_excel(uploaded_file):
 
     for c in range(1, 6):
         cell = ws_summary.cell(row=row_idx, column=c)
-        cell.fill = HEADER_FILL
-        cell.border = header_border
+        cell.border = total_border
 
     ws_summary.column_dimensions["A"].width = 8
     ws_summary.column_dimensions["B"].width = 22
@@ -326,9 +321,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา:
-    # Priority = เกิน 28 บรรทัด หรือ มี DO > 8 คอลัมน์ (ย้ายมา Sheet หน้า + ไม่ใช้ระบบสปลิตหน้า)
-    # Normal   = สาขาปกติ ไม่เกิน 28 แถว และ ไม่เกิน 8 DO (อยู่ Sheet ถัดมา + ใช้ระบบจัดหน้ามาตรฐาน)
+    # 3. คัดแยกประเภทสาขา
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -344,9 +337,9 @@ def process_excel(uploaded_file):
         )
 
         if active_items_count > 28 or num_dos > 8:
-            priority_stores.append((store_id, group, True))  # True = Is Heavy
+            priority_stores.append((store_id, group, True))
         else:
-            normal_stores.append((store_id, group, False))  # False = Is Normal
+            normal_stores.append((store_id, group, False))
 
     sorted_store_groups = priority_stores + normal_stores
 
@@ -364,7 +357,6 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # แยก DO ปกติ กับ DO ที่มีรายการ > 28 บรรทัด (ย้ายไปไว้คอลัมน์ท้ายสุด)
         normal_dos_info = []
         heavy_dos_info = []
 
@@ -383,7 +375,6 @@ def process_excel(uploaded_file):
         ordered_do_nums = [x[1] for x in ordered_dos]
         num_dos = len(ordered_do_nums)
 
-        # --- Sort รายการเลนส์ ทีละ DO (DO ที่ 1 -> 2 -> 3 ...) ---
         final_rows_list = []
 
         for idx_do, (c_idx, do_n) in enumerate(ordered_dos):
@@ -430,20 +421,14 @@ def process_excel(uploaded_file):
         ws = wb_out.create_sheet(title=sheet_title)
         ws.views.sheetView[0].showGridLines = True
 
-        # ตั้งค่าการจัดหน้ากระดาษเบื้องต้น
+        # ตั้งค่าการจัดหน้ากระดาษ: แนวนอน A4 + ขาวดำ + บังคับ 1 หน้าสำหรับทุก Sheet
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
-
-        # ----------------------------------------------------------------------
-        # เงื่อนไขการจัดหน้ากระดาษ:
-        # ถ้าเป็นสาขาปกติ (ไม่เกิน 28 บรรทัด และ <= 8 DO) -> ตั้งค่า Fit to 1 Page ให้เรียบร้อย
-        # ถ้าเป็นสาขาที่เกิน (is_heavy = True) -> ปลดการสปลิตหน้า ให้คุณไปตั้งค่าพิมพ์เองได้อิสระ
-        # ----------------------------------------------------------------------
-        if not is_heavy:
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            ws.page_setup.fitToWidth = 1
-            ws.page_setup.fitToHeight = 1
-            ws.sheet_properties.pageSetUpPr.horizontalCentered = True
+        ws.page_setup.blackAndWhite = True
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 1
+        ws.sheet_properties.pageSetUpPr.horizontalCentered = True
 
         curr_row = 1
 
@@ -456,30 +441,30 @@ def process_excel(uploaded_file):
         ).font = Font(name="Cordia New", size=11, bold=True)
         curr_row += 1
 
-        # Header ตาราง
+        # Header ตาราง (ไม่มีสีพื้นหลัง ใช้ตัวหนา + ตีเส้นขอบ)
         base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
         for col_i, h_text in enumerate(base_headers, 1):
             cell = ws.cell(row=curr_row, column=col_i, value=h_text)
             cell.font = Font(
-                name="Cordia New", size=11, bold=True, color="FFFFFF"
+                name="Cordia New", size=11, bold=True, color="000000"
             )
-            cell.fill = STEEL_FILL
             cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = header_border
 
         for idx_q, do_n in enumerate(ordered_do_nums):
             c_i = 5 + idx_q
             cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
             cell.font = Font(
-                name="Cordia New", size=11, bold=True, color="FFFFFF"
+                name="Cordia New", size=11, bold=True, color="000000"
             )
-            cell.fill = STEEL_FILL
             cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = header_border
 
         max_col_idx = 4 + num_dos
         curr_row += 1
         start_data_row = curr_row
 
-        # เขียนข้อมูลรายการเลนส์ที่ Sort เสร็จแล้ว
+        # เขียนข้อมูลรายการเลนส์
         for row_data in final_rows_list:
             ws.cell(row=curr_row, column=1, value=row_data["pid"]).alignment = (
                 Alignment(horizontal="center")
@@ -495,7 +480,7 @@ def process_excel(uploaded_file):
                 f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
             )
 
-            ws.cell(row=row_data_row if 'row_data_row' in locals() else curr_row, column=3, value=sph_fmt).alignment = Alignment(
+            ws.cell(row=curr_row, column=3, value=sph_fmt).alignment = Alignment(
                 horizontal="right"
             )
             ws.cell(row=curr_row, column=4, value=cyl_fmt).alignment = Alignment(
@@ -512,8 +497,6 @@ def process_excel(uploaded_file):
                 cell = ws.cell(row=curr_row, column=c)
                 cell.font = Font(name="Cordia New", size=11)
                 cell.border = box_border
-                if (curr_row - start_data_row) % 2 == 1:
-                    cell.fill = ZEBRA_FILL
 
             curr_row += 1
 
@@ -547,10 +530,8 @@ def process_excel(uploaded_file):
 
         for c in range(1, max_col_idx + 1):
             cell = ws.cell(row=curr_row, column=c)
-            cell.fill = HEADER_FILL
-            cell.border = header_border
+            cell.border = total_border
 
-        # ตั้งค่าความกว้างคอลัมน์
         ws.column_dimensions["A"].width = 14
         ws.column_dimensions["B"].width = 24
         ws.column_dimensions["C"].width = 9
@@ -610,7 +591,7 @@ if uploaded_file is not None:
                 st.download_button(
                     label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Consolidated Lists)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Selective_Fit.xlsx",
+                    file_name="Consolidated_Picking_Lists_Clean_Print.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

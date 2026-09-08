@@ -1,4 +1,5 @@
 import io
+import math
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -334,72 +335,33 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (ถอดคอลัมน์ Total Pcs ออกแล้ว)
+    # Tabs รายสาขา (ปรับปรุงการแบ่งหน้า: สูงสุด 8 คอลัมน์ x 28 แถว)
     # --------------------------------------------------------------------------
+    MAX_ROWS_PER_PAGE = 28
+    MAX_DO_PER_PAGE = 4  # 4 DOs + 4 คอลัมน์หลัก (PID, Name, SPH, CYL) = 8 คอลัมน์พอดี
+
     for store_id, group in store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
             if pd.notna(group["store_name"].iloc[0])
             else str(store_id)
         )
-        safe_title = f"{store_id} - {store_name}"[:31]
-        ws = wb_out.create_sheet(title=safe_title)
-        ws.views.sheetView[0].showGridLines = True
+        base_title = f"{store_id} - {store_name}"[:28]
 
-        store_cols = group["col_idx"].tolist()
-        do_nums = group["do_number"].tolist()
-        num_dos = len(do_nums)
+        store_cols_all = group["col_idx"].tolist()
+        do_nums_all = group["do_number"].tolist()
 
-        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-        ws.page_setup.paperSize = ws.PAPERSIZE_A4
-        ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 0
-        ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.print_title_rows = "1:4"
-        ws.sheet_properties.pageSetUpPr.horizontalCentered = True
-        ws.page_setup.blackAndWhite = True
-
-        ws.cell(row=1, column=1, value="Store ID:").font = Font(
-            name="Cordia New", size=11, bold=True
-        )
-        ws.cell(row=1, column=2, value=store_id).font = Font(
-            name="Cordia New", size=11
-        )
-        ws.cell(row=2, column=1, value="Store Name:").font = Font(
-            name="Cordia New", size=11, bold=True
-        )
-        ws.cell(row=2, column=2, value=store_name).font = Font(
-            name="Cordia New", size=11
-        )
-
-        base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
-        for col_i, h_text in enumerate(base_headers, 1):
-            cell = ws.cell(row=4, column=col_i, value=h_text)
-            cell.font = Font(
-                name="Cordia New", size=12, bold=True, color="FFFFFF"
-            )
-            cell.fill = STEEL_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-
-        for idx_q, do_n in enumerate(do_nums):
-            c_i = 5 + idx_q
-            cell = ws.cell(row=4, column=c_i, value=f"DO: {do_n}")
-            cell.font = Font(
-                name="Cordia New", size=12, bold=True, color="FFFFFF"
-            )
-            cell.fill = STEEL_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-
-        max_col_idx = 4 + len(do_nums)
-
+        # กรองเฉพาะสินค้าที่มีจำนวนสั่งซื้อในสาขานี้
         store_items = []
         for r_idx in range(item_start_row, item_end_row + 1):
-            qty_list = [parse_num(raw_df.iloc[r_idx, c]) for c in store_cols]
-            if sum(qty_list) == 0:
+            qty_list_full = [
+                parse_num(raw_df.iloc[r_idx, c]) for c in store_cols_all
+            ]
+            if sum(qty_list_full) == 0:
                 continue
 
             first_do_idx = next(
-                (i for i, q in enumerate(qty_list) if q > 0), 999
+                (i for i, q in enumerate(qty_list_full) if q > 0), 999
             )
             store_items.append(
                 {
@@ -409,7 +371,7 @@ def process_excel(uploaded_file):
                     "name": raw_df.iloc[r_idx, col_mapping["name"]],
                     "sph": raw_df.iloc[r_idx, col_mapping["sph"]],
                     "cyl": raw_df.iloc[r_idx, col_mapping["cyl"]],
-                    "qty_list": qty_list,
+                    "qty_list_full": qty_list_full,
                 }
             )
 
@@ -417,67 +379,169 @@ def process_excel(uploaded_file):
             store_items, key=lambda x: (x["first_do_idx"], x["r_idx"])
         )
 
-        curr_row = 5
-        for item in store_items_sorted:
-            ws.cell(row=curr_row, column=1, value=item["pid"]).alignment = (
-                Alignment(horizontal="center")
+        # ตัดแบ่งคอลัมน์ถ้า DO เกิน 4 ใบ (8 คอลัมน์รวม)
+        total_dos = len(do_nums_all)
+        num_do_chunks = math.ceil(total_dos / MAX_DO_PER_PAGE)
+
+        for chunk_idx in range(num_do_chunks):
+            start_do = chunk_idx * MAX_DO_PER_PAGE
+            end_do = min((chunk_idx + 1) * MAX_DO_PER_PAGE, total_dos)
+
+            do_nums = do_nums_all[start_do:end_do]
+            num_dos = len(do_nums)
+
+            sheet_title = (
+                base_title
+                if num_do_chunks == 1
+                else f"{base_title[:25]}_{chunk_idx+1}"
             )
-            ws.cell(row=curr_row, column=2, value=item["name"]).alignment = (
-                Alignment(horizontal="left")
-            )
-            ws.cell(row=curr_row, column=3, value=item["sph"]).alignment = (
-                Alignment(horizontal="right")
-            )
-            ws.cell(row=curr_row, column=4, value=item["cyl"]).alignment = (
-                Alignment(horizontal="right")
+            ws = wb_out.create_sheet(title=sheet_title)
+            ws.views.sheetView[0].showGridLines = True
+
+            ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+            ws.page_setup.paperSize = ws.PAPERSIZE_A4
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 0
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            ws.sheet_properties.pageSetUpPr.horizontalCentered = True
+            ws.page_setup.blackAndWhite = True
+
+            # ปรับระยะขอบกระดาษให้แคบลง (Narrow Margins)
+            ws.page_margins.left = 0.25
+            ws.page_margins.right = 0.25
+            ws.page_margins.top = 0.4
+            ws.page_margins.bottom = 0.4
+
+            curr_row = 1
+            total_items = len(store_items_sorted)
+            num_row_chunks = (
+                math.ceil(total_items / MAX_ROWS_PER_PAGE)
+                if total_items > 0
+                else 1
             )
 
-            for idx_q, q_val in enumerate(item["qty_list"]):
-                c_i = 5 + idx_q
+            for r_chunk in range(num_row_chunks):
+                start_item = r_chunk * MAX_ROWS_PER_PAGE
+                end_item = min(
+                    (r_chunk + 1) * MAX_ROWS_PER_PAGE, total_items
+                )
+                chunk_items = store_items_sorted[start_item:end_item]
+
+                # --- 1. ส่วน Header ประจำบล็อก/หน้า ---
                 ws.cell(
-                    row=curr_row, column=c_i, value=q_val if q_val > 0 else None
-                ).alignment = Alignment(horizontal="right")
+                    row=curr_row, column=1, value=f"Store ID: {store_id}"
+                ).font = Font(name="Cordia New", size=11, bold=True)
+                ws.cell(
+                    row=curr_row, column=3, value=f"Store Name: {store_name}"
+                ).font = Font(name="Cordia New", size=11, bold=True)
+                curr_row += 1
 
-            for c in range(1, max_col_idx + 1):
-                cell = ws.cell(row=curr_row, column=c)
-                cell.font = Font(name="Cordia New", size=11)
-                cell.border = box_border
-                if (curr_row - 4) % 2 == 0:
-                    cell.fill = ZEBRA_FILL
+                base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
+                for col_i, h_text in enumerate(base_headers, 1):
+                    cell = ws.cell(row=curr_row, column=col_i, value=h_text)
+                    cell.font = Font(
+                        name="Cordia New", size=11, bold=True, color="FFFFFF"
+                    )
+                    cell.fill = STEEL_FILL
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
 
-            curr_row += 1
+                for idx_q, do_n in enumerate(do_nums):
+                    c_i = 5 + idx_q
+                    cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
+                    cell.font = Font(
+                        name="Cordia New", size=11, bold=True, color="FFFFFF"
+                    )
+                    cell.fill = STEEL_FILL
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
 
-        ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
-            name="Cordia New", size=12, bold=True
-        )
-        ws.cell(row=curr_row, column=1).alignment = Alignment(
-            horizontal="center"
-        )
+                max_col_idx = 4 + num_dos
+                header_data_row = curr_row
+                curr_row += 1
 
-        for idx_q in range(len(store_cols)):
-            col_idx = 5 + idx_q
-            col_letter = get_column_letter(col_idx)
-            ws.cell(
-                row=curr_row,
-                column=col_idx,
-                value=f"=SUM({col_letter}5:{col_letter}{curr_row-1})",
-            ).font = Font(name="Cordia New", size=12, bold=True)
-            ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
-                horizontal="right"
-            )
+                # --- 2. ส่วนข้อมูลสินค้า (ไม่เกิน 28 แถวต่อบล็อก) ---
+                start_data_row = curr_row
+                for item in chunk_items:
+                    ws.cell(
+                        row=curr_row, column=1, value=item["pid"]
+                    ).alignment = Alignment(horizontal="center")
+                    ws.cell(
+                        row=curr_row, column=2, value=item["name"]
+                    ).alignment = Alignment(horizontal="left")
+                    ws.cell(
+                        row=curr_row, column=3, value=item["sph"]
+                    ).alignment = Alignment(horizontal="right")
+                    ws.cell(
+                        row=curr_row, column=4, value=item["cyl"]
+                    ).alignment = Alignment(horizontal="right")
 
-        for c in range(1, max_col_idx + 1):
-            cell = ws.cell(row=curr_row, column=c)
-            cell.fill = HEADER_FILL
-            cell.border = header_border
+                    qty_subset = item["qty_list_full"][start_do:end_do]
+                    for idx_q, q_val in enumerate(qty_subset):
+                        c_i = 5 + idx_q
+                        ws.cell(
+                            row=curr_row,
+                            column=c_i,
+                            value=q_val if q_val > 0 else None,
+                        ).alignment = Alignment(horizontal="right")
 
-        do_col_w = 12 if num_dos > 5 else 16
-        ws.column_dimensions["A"].width = 14
-        ws.column_dimensions["B"].width = 24
-        ws.column_dimensions["C"].width = 10
-        ws.column_dimensions["D"].width = 10
-        for idx_q in range(len(store_cols)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = do_col_w
+                    for c in range(1, max_col_idx + 1):
+                        cell = ws.cell(row=curr_row, column=c)
+                        cell.font = Font(name="Cordia New", size=11)
+                        cell.border = box_border
+                        if (curr_row - start_data_row) % 2 == 1:
+                            cell.fill = ZEBRA_FILL
+
+                    curr_row += 1
+
+                # --- 3. ส่วนสรุปผลรวมประจำหน้า (Grand Total) ---
+                ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
+                    name="Cordia New", size=11, bold=True
+                )
+                ws.cell(row=curr_row, column=1).alignment = Alignment(
+                    horizontal="center"
+                )
+
+                for idx_q in range(num_dos):
+                    col_idx = 5 + idx_q
+                    col_letter = get_column_letter(col_idx)
+                    if start_data_row <= curr_row - 1:
+                        ws.cell(
+                            row=curr_row,
+                            column=col_idx,
+                            value=f"=SUM({col_letter}{start_data_row}:{col_letter}{curr_row-1})",
+                        ).font = Font(name="Cordia New", size=11, bold=True)
+                    else:
+                        ws.cell(row=curr_row, column=col_idx, value=0).font = (
+                            Font(name="Cordia New", size=11, bold=True)
+                        )
+                    ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
+                        horizontal="right"
+                    )
+
+                for c in range(1, max_col_idx + 1):
+                    cell = ws.cell(row=curr_row, column=c)
+                    cell.fill = HEADER_FILL
+                    cell.border = header_border
+
+                # ใส่จุดแบ่งหน้า (Page Break) สำหรับพิมพ์หน้า-หลัง หรือขึ้นกระดาษใบใหม่
+                if r_chunk < num_row_chunks - 1:
+                    ws.row_breaks.append(
+                        openpyxl.worksheet.pagebreak.Break(id=curr_row)
+                    )
+                    curr_row += 2  # เว้นช่องว่างระหว่างหน้าเล็กน้อย
+
+            # ตั้งค่าความกว้างคอลัมน์มาตรฐาน
+            ws.column_dimensions["A"].width = 14
+            ws.column_dimensions["B"].width = 24
+            ws.column_dimensions["C"].width = 9
+            ws.column_dimensions["D"].width = 9
+            for idx_q in range(num_dos):
+                ws.column_dimensions[
+                    get_column_letter(5 + idx_q)
+                ].width = 14
 
     for sheet in wb_out.worksheets:
         sheet.sheet_view.tabSelected = True
@@ -529,9 +593,9 @@ if uploaded_file is not None:
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 st.download_button(
-                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Compact Version)",
+                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Optimized Print Layout)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Compact.xlsx",
+                    file_name="Consolidated_Picking_Lists_Optimized.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

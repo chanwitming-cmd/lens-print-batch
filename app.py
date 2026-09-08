@@ -1,5 +1,4 @@
 import io
-import math
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -229,15 +228,6 @@ def process_excel(uploaded_file):
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
     ws_summary.views.sheetView[0].showGridLines = True
 
-    ws_summary.page_setup.orientation = ws_summary.ORIENTATION_LANDSCAPE
-    ws_summary.page_setup.paperSize = ws_summary.PAPERSIZE_A4
-    ws_summary.page_setup.fitToWidth = 1
-    ws_summary.page_setup.fitToHeight = 0
-    ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
-    ws_summary.print_title_rows = "1:3"
-    ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
-    ws_summary.page_setup.blackAndWhite = True
-
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
         "สรุปรายการจัดส่งเลนส์ประจำรอบ (Store Dispatch Summary)"
@@ -263,7 +253,7 @@ def process_excel(uploaded_file):
         cell.fill = STEEL_FILL
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    store_groups = stores_df.groupby("store_id", sort=False)
+    store_groups = list(stores_df.groupby("store_id", sort=False))
 
     row_idx = 4
     idx = 1
@@ -335,266 +325,228 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (ปรับแก้ Logic จัดกลุ่ม DO + Sort เลนส์และค่าสายตา)
+    # 3. จัดเรียงลำดับสาขา: แยกกลุ่มพิเศษ (เกิน 28 บรรทัด หรือ > 8 DO) มาไว้อยู่ Sheet หน้าๆ
     # --------------------------------------------------------------------------
-    MAX_ROWS_PER_PAGE = 28
-    MAX_DO_PER_PAGE = 8
-    HEAVY_ITEM_THRESHOLD = 30
+    priority_stores = []
+    normal_stores = []
 
     for store_id, group in store_groups:
+        st_cols = group["col_idx"].tolist()
+        num_dos = len(st_cols)
+
+        # นับบรรทัดรวมที่มีการสั่งซื้อทั้งหมดในสาขานี้
+        active_items_count = sum(
+            1
+            for r in range(item_start_row, item_end_row + 1)
+            if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
+        )
+
+        # เงื่อนไข: เกิน 28 บรรทัด หรือ มี DO เกิน 8 คอลัมน์
+        if active_items_count > 28 or num_dos > 8:
+            priority_stores.append((store_id, group))
+        else:
+            normal_stores.append((store_id, group))
+
+    # รวมสาขาที่เข้าเงื่อนไขอยู่หน้า ตามด้วยสาขาปกติ
+    sorted_store_groups = priority_stores + normal_stores
+
+    # --------------------------------------------------------------------------
+    # 4. สร้าง Sheet รายสาขา (ประมวลผลทีละ DO และย้าย DO > 28 บรรทัดไปไว้ท้ายสุด)
+    # --------------------------------------------------------------------------
+    for store_id, group in sorted_store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
             if pd.notna(group["store_name"].iloc[0])
             else str(store_id)
         )
-        base_title = f"{store_id} - {store_name}"[:28]
+        sheet_title = f"{store_id} - {store_name}"[:28]
 
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # 1. แยกแยะ DO ใหญ่ (>30 เลนส์) กับ DO ปกติ
-        heavy_cols, heavy_dos = [], []
-        normal_cols, normal_dos = [], []
+        # แยก DO ปกติ กับ DO ที่มีรายการ > 28 บรรทัด (ขยับไปอยู่ท้ายสุดเสมอ)
+        normal_dos_info = []
+        heavy_dos_info = []
 
         for c_idx, do_n in zip(store_cols_all, do_nums_all):
-            item_count = sum(
+            do_item_count = sum(
                 1
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            if item_count > HEAVY_ITEM_THRESHOLD:
-                heavy_cols.append(c_idx)
-                heavy_dos.append(do_n)
+            if do_item_count > 28:
+                heavy_dos_info.append((c_idx, do_n))
             else:
-                normal_cols.append(c_idx)
-                normal_dos.append(do_n)
+                normal_dos_info.append((c_idx, do_n))
 
-        # 2. จับกลุ่ม DO โดยทั้งกลุ่มใหญ่และกลุ่มปกติ จะจับมารวมกันหน้าละไม่เกิน 8 DO เพื่อประหยัดกระดาษ
-        do_chunks = []
+        # รวม DO โดยเอา DO ใหญ่ไปไว้คอลัมน์ท้ายสุด
+        ordered_dos = normal_dos_info + heavy_dos_info
+        ordered_cols = [x[0] for x in ordered_dos]
+        ordered_do_nums = [x[1] for x in ordered_dos]
+        num_dos = len(ordered_do_nums)
 
-        # จัดกลุ่ม DO ใหญ่ (กลุ่มละไม่เกิน 8 DO)
-        for i in range(0, len(heavy_cols), MAX_DO_PER_PAGE):
-            do_chunks.append(
-                (
-                    heavy_cols[i : i + MAX_DO_PER_PAGE],
-                    heavy_dos[i : i + MAX_DO_PER_PAGE],
-                )
-            )
+        # --- ประมวลผลและ Sort รายการเลนส์ ทีละ DO (DO ที่ 1 -> 2 -> 3 ...) ---
+        final_rows_list = []
 
-        # จัดกลุ่ม DO ปกติ (กลุ่มละไม่เกิน 8 DO)
-        for i in range(0, len(normal_cols), MAX_DO_PER_PAGE):
-            do_chunks.append(
-                (
-                    normal_cols[i : i + MAX_DO_PER_PAGE],
-                    normal_dos[i : i + MAX_DO_PER_PAGE],
-                )
-            )
-
-        # 3. สร้าง Worksheet แต่ละกลุ่ม
-        for chunk_idx, (current_cols, do_nums) in enumerate(do_chunks):
-            num_dos = len(do_nums)
-
-            # กรองเลนส์และดึงข้อมูลมา Sort
-            store_items = []
+        for idx_do, (c_idx, do_n) in enumerate(ordered_dos):
+            do_items = []
             for r_idx in range(item_start_row, item_end_row + 1):
-                qty_subset = [
-                    parse_num(raw_df.iloc[r_idx, c]) for c in current_cols
-                ]
-                if sum(qty_subset) == 0:
-                    continue  # ตัดเลนส์ไม่มีการสั่งซื้อออก
+                q_val = parse_num(raw_df.iloc[r_idx, c_idx])
+                if q_val > 0:
+                    pid_val = raw_df.iloc[r_idx, col_mapping["pid"]]
+                    name_val = raw_df.iloc[r_idx, col_mapping["name"]]
+                    sph_val = parse_num(raw_df.iloc[r_idx, col_mapping["sph"]])
+                    cyl_val = parse_num(raw_df.iloc[r_idx, col_mapping["cyl"]])
 
-                pid_val = raw_df.iloc[r_idx, col_mapping["pid"]]
-                name_val = raw_df.iloc[r_idx, col_mapping["name"]]
-                sph_val = parse_num(raw_df.iloc[r_idx, col_mapping["sph"]])
-                cyl_val = parse_num(raw_df.iloc[r_idx, col_mapping["cyl"]])
+                    do_items.append(
+                        {
+                            "pid": str(pid_val) if pd.notna(pid_val) else "",
+                            "name": (
+                                str(name_val) if pd.notna(name_val) else ""
+                            ),
+                            "sph": sph_val,
+                            "cyl": cyl_val,
+                            "qty": int(q_val) if q_val == int(q_val) else q_val,
+                            "do_col_index": idx_do,
+                        }
+                    )
 
-                store_items.append(
-                    {
-                        "r_idx": r_idx,
-                        "pid": str(pid_val) if pd.notna(pid_val) else "",
-                        "name": str(name_val) if pd.notna(name_val) else "",
-                        "sph": sph_val,
-                        "cyl": cyl_val,
-                        "qty_subset": [
-                            int(q) if q == int(q) else q for q in qty_subset
-                        ],
-                    }
-                )
-
-            # --- แก้ไขจุดสำคัญ: SORT เรียงลำดับประเภทรุ่นเลนส์ + SPH + CYL ---
-            # เรียงตาม: 1. รุ่นเลนส์ (Name) -> 2. ค่าสายตา SPH (มากไปน้อย) -> 3. ค่าสายตา CYL (มากไปน้อย)
-            store_items_sorted = sorted(
-                store_items,
+            # Sort ภายใน DO นั้นๆ: 1. ชนิดเลนส์ -> 2. SPH (บวกไปลบ) -> 3. CYL (บวกไปลบ)
+            do_items_sorted = sorted(
+                do_items,
                 key=lambda x: (x["name"], -x["sph"], -x["cyl"], x["pid"]),
             )
 
-            sheet_title = (
-                base_title
-                if len(do_chunks) == 1
-                else f"{base_title[:25]}_{chunk_idx+1}"
-            )
-            ws = wb_out.create_sheet(title=sheet_title)
-            ws.views.sheetView[0].showGridLines = True
-
-            ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-            ws.page_setup.paperSize = ws.PAPERSIZE_A4
-            ws.page_setup.fitToWidth = 1
-            ws.page_setup.fitToHeight = 0
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            ws.sheet_properties.pageSetUpPr.horizontalCentered = True
-            ws.page_setup.blackAndWhite = True
-
-            ws.page_margins.left = 0.25
-            ws.page_margins.right = 0.25
-            ws.page_margins.top = 0.4
-            ws.page_margins.bottom = 0.4
-
-            curr_row = 1
-            total_items = len(store_items_sorted)
-            num_row_chunks = (
-                math.ceil(total_items / MAX_ROWS_PER_PAGE)
-                if total_items > 0
-                else 1
-            )
-
-            all_page_start_rows = []
-            all_page_end_rows = []
-
-            for r_chunk in range(num_row_chunks):
-                is_last_page = r_chunk == (num_row_chunks - 1)
-
-                start_item = r_chunk * MAX_ROWS_PER_PAGE
-                end_item = min(
-                    (r_chunk + 1) * MAX_ROWS_PER_PAGE, total_items
+            # นำเข้าลิสต์รวมแถวที่จะเขียนลง Sheet
+            for item in do_items_sorted:
+                qty_array = [None] * num_dos
+                qty_array[item["do_col_index"]] = item["qty"]
+                final_rows_list.append(
+                    {
+                        "pid": item["pid"],
+                        "name": item["name"],
+                        "sph": item["sph"],
+                        "cyl": item["cyl"],
+                        "qtys": qty_array,
+                    }
                 )
-                chunk_items = store_items_sorted[start_item:end_item]
 
-                # Header
-                ws.cell(
-                    row=curr_row, column=1, value=f"Store ID: {store_id}"
-                ).font = Font(name="Cordia New", size=11, bold=True)
-                ws.cell(
-                    row=curr_row, column=3, value=f"Store Name: {store_name}"
-                ).font = Font(name="Cordia New", size=11, bold=True)
-                curr_row += 1
+        # สร้าง Worksheet
+        ws = wb_out.create_sheet(title=sheet_title)
+        ws.views.sheetView[0].showGridLines = True
 
-                base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
-                for col_i, h_text in enumerate(base_headers, 1):
-                    cell = ws.cell(row=curr_row, column=col_i, value=h_text)
-                    cell.font = Font(
-                        name="Cordia New", size=11, bold=True, color="FFFFFF"
-                    )
-                    cell.fill = STEEL_FILL
-                    cell.alignment = Alignment(
-                        horizontal="center", vertical="center"
-                    )
+        curr_row = 1
 
-                for idx_q, do_n in enumerate(do_nums):
-                    c_i = 5 + idx_q
-                    cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
-                    cell.font = Font(
-                        name="Cordia New", size=11, bold=True, color="FFFFFF"
-                    )
-                    cell.fill = STEEL_FILL
-                    cell.alignment = Alignment(
-                        horizontal="center", vertical="center"
-                    )
+        # Header ข้อมูลสาขา
+        ws.cell(
+            row=curr_row, column=1, value=f"Store ID: {store_id}"
+        ).font = Font(name="Cordia New", size=11, bold=True)
+        ws.cell(
+            row=curr_row, column=3, value=f"Store Name: {store_name}"
+        ).font = Font(name="Cordia New", size=11, bold=True)
+        curr_row += 1
 
-                max_col_idx = 4 + num_dos
-                curr_row += 1
+        # Header ตาราง
+        base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
+        for col_i, h_text in enumerate(base_headers, 1):
+            cell = ws.cell(row=curr_row, column=col_i, value=h_text)
+            cell.font = Font(
+                name="Cordia New", size=11, bold=True, color="FFFFFF"
+            )
+            cell.fill = STEEL_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
 
-                # ข้อมูลรายการเลนส์ที่ Sort เรียบร้อยแล้ว
-                start_data_row = curr_row
-                for item in chunk_items:
-                    ws.cell(
-                        row=curr_row, column=1, value=item["pid"]
-                    ).alignment = Alignment(horizontal="center")
-                    ws.cell(
-                        row=curr_row, column=2, value=item["name"]
-                    ).alignment = Alignment(horizontal="left")
+        for idx_q, do_n in enumerate(ordered_do_nums):
+            c_i = 5 + idx_q
+            cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
+            cell.font = Font(
+                name="Cordia New", size=11, bold=True, color="FFFFFF"
+            )
+            cell.fill = STEEL_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
 
-                    # ฟอร์แมตแสดงผล SPH / CYL ให้สวยงาม (+1.00, -0.50, 0.00)
-                    sph_fmt = f"{item['sph']:+.2f}" if item['sph'] != 0 else "0.00"
-                    cyl_fmt = f"{item['cyl']:+.2f}" if item['cyl'] != 0 else "0.00"
+        max_col_idx = 4 + num_dos
+        curr_row += 1
+        start_data_row = curr_row
 
-                    ws.cell(
-                        row=curr_row, column=3, value=sph_fmt
-                    ).alignment = Alignment(horizontal="right")
-                    ws.cell(
-                        row=curr_row, column=4, value=cyl_fmt
-                    ).alignment = Alignment(horizontal="right")
+        # เขียนข้อมูลรายการเลนส์ที่ Sort เสร็จแล้วลงใน Sheet (พิมพ์แบบเรียงยาวต่อกัน)
+        for row_data in final_rows_list:
+            ws.cell(row=curr_row, column=1, value=row_data["pid"]).alignment = (
+                Alignment(horizontal="center")
+            )
+            ws.cell(
+                row=curr_row, column=2, value=row_data["name"]
+            ).alignment = Alignment(horizontal="left")
 
-                    for idx_q, q_val in enumerate(item["qty_subset"]):
-                        c_i = 5 + idx_q
-                        ws.cell(
-                            row=curr_row,
-                            column=c_i,
-                            value=q_val if q_val > 0 else None,
-                        ).alignment = Alignment(horizontal="right")
+            sph_fmt = (
+                f"{row_data['sph']:+.2f}" if row_data["sph"] != 0 else "0.00"
+            )
+            cyl_fmt = (
+                f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
+            )
 
-                    for c in range(1, max_col_idx + 1):
-                        cell = ws.cell(row=curr_row, column=c)
-                        cell.font = Font(name="Cordia New", size=11)
-                        cell.border = box_border
-                        if (curr_row - start_data_row) % 2 == 1:
-                            cell.fill = ZEBRA_FILL
+            ws.cell(row=curr_row, column=3, value=sph_fmt).alignment = Alignment(
+                horizontal="right"
+            )
+            ws.cell(row=curr_row, column=4, value=cyl_fmt).alignment = Alignment(
+                horizontal="right"
+            )
 
-                    curr_row += 1
+            for idx_q, q_val in enumerate(row_data["qtys"]):
+                c_i = 5 + idx_q
+                ws.cell(row=curr_row, column=c_i, value=q_val).alignment = (
+                    Alignment(horizontal="right")
+                )
 
-                end_data_row = curr_row - 1
-                if start_data_row <= end_data_row:
-                    all_page_start_rows.append(start_data_row)
-                    all_page_end_rows.append(end_data_row)
+            for c in range(1, max_col_idx + 1):
+                cell = ws.cell(row=curr_row, column=c)
+                cell.font = Font(name="Cordia New", size=11)
+                cell.border = box_border
+                if (curr_row - start_data_row) % 2 == 1:
+                    cell.fill = ZEBRA_FILL
 
-                # Grand Total หน้าสุดท้าย
-                if is_last_page:
-                    ws.cell(
-                        row=curr_row, column=1, value="Grand Total"
-                    ).font = Font(name="Cordia New", size=11, bold=True)
-                    ws.cell(row=curr_row, column=1).alignment = Alignment(
-                        horizontal="center"
-                    )
+            curr_row += 1
 
-                    for idx_q in range(num_dos):
-                        col_idx = 5 + idx_q
-                        col_letter = get_column_letter(col_idx)
+        end_data_row = curr_row - 1
 
-                        if all_page_start_rows:
-                            sum_parts = [
-                                f"{col_letter}{s}:{col_letter}{e}"
-                                for s, e in zip(
-                                    all_page_start_rows, all_page_end_rows
-                                )
-                            ]
-                            sum_formula = f"=SUM({','.join(sum_parts)})"
-                        else:
-                            sum_formula = 0
+        # แถว Grand Total สรุปรวมท้ายตาราง
+        ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
+            name="Cordia New", size=11, bold=True
+        )
+        ws.cell(row=curr_row, column=1).alignment = Alignment(
+            horizontal="center"
+        )
 
-                        ws.cell(
-                            row=curr_row, column=col_idx, value=sum_formula
-                        ).font = Font(name="Cordia New", size=11, bold=True)
-                        ws.cell(row=curr_row, column=col_idx).alignment = (
-                            Alignment(horizontal="right")
-                        )
+        for idx_q in range(num_dos):
+            col_idx = 5 + idx_q
+            col_letter = get_column_letter(col_idx)
 
-                    for c in range(1, max_col_idx + 1):
-                        cell = ws.cell(row=curr_row, column=c)
-                        cell.fill = HEADER_FILL
-                        cell.border = header_border
-                else:
-                    ws.row_breaks.append(
-                        openpyxl.worksheet.pagebreak.Break(id=curr_row - 1)
-                    )
+            if start_data_row <= end_data_row:
+                sum_formula = (
+                    f"=SUM({col_letter}{start_data_row}:{col_letter}{end_data_row})"
+                )
+            else:
+                sum_formula = 0
 
-            # ความกว้างคอลัมน์
-            ws.column_dimensions["A"].width = 14
-            ws.column_dimensions["B"].width = 24
-            ws.column_dimensions["C"].width = 9
-            ws.column_dimensions["D"].width = 9
-            for idx_q in range(num_dos):
-                ws.column_dimensions[
-                    get_column_letter(5 + idx_q)
-                ].width = 13
+            ws.cell(row=curr_row, column=col_idx, value=sum_formula).font = Font(
+                name="Cordia New", size=11, bold=True
+            )
+            ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
+                horizontal="right"
+            )
+
+        for c in range(1, max_col_idx + 1):
+            cell = ws.cell(row=curr_row, column=c)
+            cell.fill = HEADER_FILL
+            cell.border = header_border
+
+        # ตั้งค่าความกว้างคอลัมน์ให้อ่านง่าย
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 24
+        ws.column_dimensions["C"].width = 9
+        ws.column_dimensions["D"].width = 9
+        for idx_q in range(num_dos):
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 13
 
     for sheet in wb_out.worksheets:
         sheet.sheet_view.tabSelected = True
@@ -624,8 +576,8 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดกลุ่ม DO สูงสุด 8 คอลัมน์ + เรียงลำดับเลนส์และค่าสายตา (SPH/CYL)<br>
-        3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปใช้งานได้ทันที
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet แยกตามเงื่อนไข + ย้าย DO ใหญ่ไปท้ายสุด + Sort เรียงสายตาแยกทีละ DO<br>
+        3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปตั้งค่าสั่งพิมพ์ได้อย่างอิสระ
     </div>
 """,
     unsafe_allow_html=True,
@@ -639,16 +591,16 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดระเบียบตาราง เรียงค่าสายตา และคำนวณยอด..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet, เรียงสายตาแยกทีละ DO และประมวลผลข้อมูล..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 st.download_button(
-                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Clean Print Layout)",
+                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Consolidated Lists)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Clean.xlsx",
+                    file_name="Consolidated_Picking_Lists_Custom_Sorted.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

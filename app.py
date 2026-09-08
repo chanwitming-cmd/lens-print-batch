@@ -1,4 +1,5 @@
 import io
+import math
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -325,7 +326,9 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # 3. จัดเรียงลำดับสาขา: แยกกลุ่มพิเศษ (เกิน 28 บรรทัด หรือ > 8 DO) มาไว้อยู่ Sheet หน้าๆ
+    # 3. คัดแยกประเภทสาขา:
+    # Priority = เกิน 28 บรรทัด หรือ มี DO > 8 คอลัมน์ (ย้ายมา Sheet หน้า + ไม่ใช้ระบบสปลิตหน้า)
+    # Normal   = สาขาปกติ ไม่เกิน 28 แถว และ ไม่เกิน 8 DO (อยู่ Sheet ถัดมา + ใช้ระบบจัดหน้ามาตรฐาน)
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -334,26 +337,23 @@ def process_excel(uploaded_file):
         st_cols = group["col_idx"].tolist()
         num_dos = len(st_cols)
 
-        # นับบรรทัดรวมที่มีการสั่งซื้อทั้งหมดในสาขานี้
         active_items_count = sum(
             1
             for r in range(item_start_row, item_end_row + 1)
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
-        # เงื่อนไข: เกิน 28 บรรทัด หรือ มี DO เกิน 8 คอลัมน์
         if active_items_count > 28 or num_dos > 8:
-            priority_stores.append((store_id, group))
+            priority_stores.append((store_id, group, True))  # True = Is Heavy
         else:
-            normal_stores.append((store_id, group))
+            normal_stores.append((store_id, group, False))  # False = Is Normal
 
-    # รวมสาขาที่เข้าเงื่อนไขอยู่หน้า ตามด้วยสาขาปกติ
     sorted_store_groups = priority_stores + normal_stores
 
     # --------------------------------------------------------------------------
-    # 4. สร้าง Sheet รายสาขา (ประมวลผลทีละ DO และย้าย DO > 28 บรรทัดไปไว้ท้ายสุด)
+    # 4. สร้าง Sheet รายสาขา
     # --------------------------------------------------------------------------
-    for store_id, group in sorted_store_groups:
+    for store_id, group, is_heavy in sorted_store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
             if pd.notna(group["store_name"].iloc[0])
@@ -364,7 +364,7 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # แยก DO ปกติ กับ DO ที่มีรายการ > 28 บรรทัด (ขยับไปอยู่ท้ายสุดเสมอ)
+        # แยก DO ปกติ กับ DO ที่มีรายการ > 28 บรรทัด (ย้ายไปไว้คอลัมน์ท้ายสุด)
         normal_dos_info = []
         heavy_dos_info = []
 
@@ -379,13 +379,11 @@ def process_excel(uploaded_file):
             else:
                 normal_dos_info.append((c_idx, do_n))
 
-        # รวม DO โดยเอา DO ใหญ่ไปไว้คอลัมน์ท้ายสุด
         ordered_dos = normal_dos_info + heavy_dos_info
-        ordered_cols = [x[0] for x in ordered_dos]
         ordered_do_nums = [x[1] for x in ordered_dos]
         num_dos = len(ordered_do_nums)
 
-        # --- ประมวลผลและ Sort รายการเลนส์ ทีละ DO (DO ที่ 1 -> 2 -> 3 ...) ---
+        # --- Sort รายการเลนส์ ทีละ DO (DO ที่ 1 -> 2 -> 3 ...) ---
         final_rows_list = []
 
         for idx_do, (c_idx, do_n) in enumerate(ordered_dos):
@@ -411,13 +409,11 @@ def process_excel(uploaded_file):
                         }
                     )
 
-            # Sort ภายใน DO นั้นๆ: 1. ชนิดเลนส์ -> 2. SPH (บวกไปลบ) -> 3. CYL (บวกไปลบ)
             do_items_sorted = sorted(
                 do_items,
                 key=lambda x: (x["name"], -x["sph"], -x["cyl"], x["pid"]),
             )
 
-            # นำเข้าลิสต์รวมแถวที่จะเขียนลง Sheet
             for item in do_items_sorted:
                 qty_array = [None] * num_dos
                 qty_array[item["do_col_index"]] = item["qty"]
@@ -431,9 +427,23 @@ def process_excel(uploaded_file):
                     }
                 )
 
-        # สร้าง Worksheet
         ws = wb_out.create_sheet(title=sheet_title)
         ws.views.sheetView[0].showGridLines = True
+
+        # ตั้งค่าการจัดหน้ากระดาษเบื้องต้น
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+
+        # ----------------------------------------------------------------------
+        # เงื่อนไขการจัดหน้ากระดาษ:
+        # ถ้าเป็นสาขาปกติ (ไม่เกิน 28 บรรทัด และ <= 8 DO) -> ตั้งค่า Fit to 1 Page ให้เรียบร้อย
+        # ถ้าเป็นสาขาที่เกิน (is_heavy = True) -> ปลดการสปลิตหน้า ให้คุณไปตั้งค่าพิมพ์เองได้อิสระ
+        # ----------------------------------------------------------------------
+        if not is_heavy:
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 1
+            ws.sheet_properties.pageSetUpPr.horizontalCentered = True
 
         curr_row = 1
 
@@ -469,7 +479,7 @@ def process_excel(uploaded_file):
         curr_row += 1
         start_data_row = curr_row
 
-        # เขียนข้อมูลรายการเลนส์ที่ Sort เสร็จแล้วลงใน Sheet (พิมพ์แบบเรียงยาวต่อกัน)
+        # เขียนข้อมูลรายการเลนส์ที่ Sort เสร็จแล้ว
         for row_data in final_rows_list:
             ws.cell(row=curr_row, column=1, value=row_data["pid"]).alignment = (
                 Alignment(horizontal="center")
@@ -485,7 +495,7 @@ def process_excel(uploaded_file):
                 f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
             )
 
-            ws.cell(row=curr_row, column=3, value=sph_fmt).alignment = Alignment(
+            ws.cell(row=row_data_row if 'row_data_row' in locals() else curr_row, column=3, value=sph_fmt).alignment = Alignment(
                 horizontal="right"
             )
             ws.cell(row=curr_row, column=4, value=cyl_fmt).alignment = Alignment(
@@ -509,7 +519,7 @@ def process_excel(uploaded_file):
 
         end_data_row = curr_row - 1
 
-        # แถว Grand Total สรุปรวมท้ายตาราง
+        # แถว Grand Total ท้ายตาราง
         ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
             name="Cordia New", size=11, bold=True
         )
@@ -540,7 +550,7 @@ def process_excel(uploaded_file):
             cell.fill = HEADER_FILL
             cell.border = header_border
 
-        # ตั้งค่าความกว้างคอลัมน์ให้อ่านง่าย
+        # ตั้งค่าความกว้างคอลัมน์
         ws.column_dimensions["A"].width = 14
         ws.column_dimensions["B"].width = 24
         ws.column_dimensions["C"].width = 9
@@ -576,8 +586,8 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet แยกตามเงื่อนไข + ย้าย DO ใหญ่ไปท้ายสุด + Sort เรียงสายตาแยกทีละ DO<br>
-        3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปตั้งค่าสั่งพิมพ์ได้อย่างอิสระ
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + Sort สายตาแยกตาม DO<br>
+        3. ดาวน์โหลดไฟล์ Excel สรุปผลพร้อมนำไปใช้งานได้ทันที
     </div>
 """,
     unsafe_allow_html=True,
@@ -591,7 +601,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet, เรียงสายตาแยกทีละ DO และประมวลผลข้อมูล..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และประมวลผลตารางข้อมูล..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
@@ -600,7 +610,7 @@ if uploaded_file is not None:
                 st.download_button(
                     label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Consolidated Lists)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Custom_Sorted.xlsx",
+                    file_name="Consolidated_Picking_Lists_Selective_Fit.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

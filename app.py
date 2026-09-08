@@ -4,55 +4,149 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
 import streamlit as st
 
+# ตั้งค่าหน้าเว็บ
 st.set_page_config(
-    page_title="Lens Dispatcher - Batch Print", page_icon="🖨️", layout="wide"
+    page_title="Optics Lens Dispatcher System",
+    page_icon="🌐",
+    layout="centered",
 )
 
-st.title("🖨️ Lens Dispatcher - Batch Print Ready")
-st.write(
-    "อัปโหลดไฟล์ `TH_Consolidated_Sheet1.xlsx` เพื่อ คลีนข้อมูล + Sort แยกสาขา + เซ็ตหน้ากระดาษพร้อมพิมพ์แนวนอน/ขาวดำรวดเดียวจบ"
+# Custom CSS เพื่อแต่งหน้าตา (UI Theme) ให้เหมือนรูปต้นฉบับ
+st.markdown(
+    """
+    <style>
+    /* พื้นหลังหลักของแอป */
+    .stApp {
+        background-color: #EBF1F6;
+    }
+    
+    /* ซ่อน Header/Footer หลักของ Streamlit */
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* กล่อง Card สไตล์โค้งมน */
+    .custom-card {
+        background-color: #FFFFFF;
+        padding: 30px;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        margin-bottom: 20px;
+        text-align: center;
+    }
+    
+    .instruction-card {
+        background-color: #F8FAFC;
+        padding: 24px;
+        border-radius: 16px;
+        border: 1px solid #E2E8F0;
+        margin-bottom: 20px;
+        text-align: left;
+    }
+    
+    /* หัวข้อหลัก */
+    .main-title {
+        color: #1E3A8A;
+        font-size: 26px;
+        font-weight: 700;
+        margin-top: 10px;
+        margin-bottom: 8px;
+    }
+    
+    .sub-title {
+        color: #64748B;
+        font-size: 15px;
+        font-weight: 500;
+    }
+    
+    /* ข้อความขั้นตอน */
+    .instruction-title {
+        color: #1E3A8A;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 12px;
+    }
+    
+    .instruction-step {
+        color: #334155;
+        font-size: 14px;
+        line-height: 1.8;
+    }
+    
+    .code-span {
+        background-color: #F1F5F9;
+        color: #16A34A;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-weight: 600;
+    }
+    
+    /* ไอคอนไอคอนโลก */
+    .icon-container {
+        font-size: 48px;
+        line-height: 1;
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
 )
 
+# --- Header Section ---
+st.markdown(
+    """
+    <div class="custom-card">
+        <div class="icon-container">🌐</div>
+        <div class="main-title">Optics Lens Dispatcher System</div>
+        <div class="sub-title">ระบบจัดกลุ่มและสรุปรายการจัดส่งเลนส์แยกสาขาอัตโนมัติ (Print-Ready)</div>
+    </div>
+""",
+    unsafe_allow_html=True,
+)
+
+# --- Instruction Section ---
+st.markdown(
+    """
+    <div class="instruction-card">
+        <div class="instruction-title">🔹 ขั้นตอนการทำงาน:</div>
+        <div class="instruction-step">1. อัปโหลดไฟล์ <span class="code-span">TH_Consolidated_Sheet1.xlsx</span> ในช่องด้านล่าง</div>
+        <div class="instruction-step">2. กดปุ่ม "ประมวลผลไฟล์" เพื่อจัดกลุ่มตามสาขาและเซ็ตหน้ากระดาษพิมพ์</div>
+        <div class="instruction-step">3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปสั่งพิมพ์รวดเดียวจบได้ทันที</div>
+    </div>
+""",
+    unsafe_allow_html=True,
+)
+
+# --- File Uploader Section ---
 uploaded_file = st.file_uploader(
-    "เลือกไฟล์ Excel ดั้งเดิม", type=["xlsx", "xls"]
+    "เลือกไฟล์ Excel ต้นฉบับ (.xlsx)", type=["xlsx", "xls"]
 )
 
 
 def process_and_format_for_print(uploaded_file):
-    # 1. อ่านไฟล์ Excel และ Sort / Clean ข้อมูลด้วย Pandas
     df = pd.read_excel(uploaded_file)
 
-    # (ตรงนี้ใส่ Logic การคลีนและจัดกลุ่มข้อมูลตามสาขาเหมือนแอปแรก)
-    # สมมติการจัดเรียงข้อมูลพื้นฐาน
+    # จัดเรียงข้อมูลตามสาขา (ถ้ามีคอลัมน์ Branch)
     if "Branch" in df.columns:
         df = df.sort_values(by=["Branch"]).reset_index(drop=True)
 
-    # 2. เขียนข้อมูลลงใน Memory Buffer ด้วย OpenPyXL เพื่อจัด Page Setup
     output_buffer = io.BytesIO()
-
     with pd.ExcelWriter(output_buffer, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Print_Ready", index=False)
 
     output_buffer.seek(0)
-
-    # 3. โหลด Workbook เพื่อปรับแต่ง Page Setup สำหรับการพิมพ์
     wb = openpyxl.load_workbook(output_buffer)
     ws = wb.active
 
-    # ตั้งค่าหน้ากระดาษ: แนวนอน / A4 / ขาว-ดำ
+    # เซ็ตค่าการพิมพ์: แนวนอน / ขาว-ดำ / Fit to 1 Page Wide
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.blackAndWhite = True
 
-    # บีบความกว้างให้พอดี 1 หน้ากระดาษพอดี (Fit to 1 Page Wide)
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0  # ปล่อยความยาวไหลตามจำนวนรายการ
-
-    # หัวตาราง (แถว 1) ให้ขึ้นซ้ำทุกหน้าอัตโนมัติ
+    ws.page_setup.fitToHeight = 0
     ws.print_title_rows = "1:1"
 
-    # จัดการเส้นขอบและฟอนต์ขนาด 10pt
     thin_border = Border(
         left=Side(style="thin", color="000000"),
         right=Side(style="thin", color="000000"),
@@ -65,23 +159,24 @@ def process_and_format_for_print(uploaded_file):
             cell.font = Font(name="Calibri", size=10)
             cell.border = thin_border
 
-    # บันทึกไฟล์กลับลง Buffer
     final_buffer = io.BytesIO()
     wb.save(final_buffer)
     final_buffer.seek(0)
-
     return final_buffer
 
 
+# --- Processing Button & Actions ---
 if uploaded_file is not None:
-    st.success("อัปโหลดไฟล์เรียบร้อยแล้ว!")
-    if st.button("🚀 ประมวลผลและสร้างไฟล์พร้อมพิมพ์", type="primary"):
+    st.write("")
+    if st.button("🚀 ประมวลผลไฟล์", type="primary", use_container_width=True):
         with st.spinner("กำลังจัดเรียงข้อมูลและตั้งค่าหน้ากระดาษ..."):
             final_excel = process_and_format_for_print(uploaded_file)
 
+            st.success("ประมวลผลเรียบร้อยแล้ว!")
             st.download_button(
-                label="📥 ดาวน์โหลดไฟล์สำหรับสั่งพิมพ์ (Print-Ready Excel)",
+                label="📥 ดาวน์โหลดไฟล์ Excel พร้อมพิมพ์",
                 data=final_excel,
-                file_name="Lens_Picking_BatchPrint.xlsx",
+                file_name="Lens_Picking_PrintReady.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )

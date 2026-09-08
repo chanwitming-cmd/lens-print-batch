@@ -126,11 +126,11 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
-        return 0
+        return 0.0
     try:
-        return float(val) if "." in str(val) else int(val)
+        return float(val)
     except ValueError:
-        return 0
+        return 0.0
 
 
 def process_excel(uploaded_file):
@@ -335,11 +335,11 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (ปรับเกณฑ์การจัดกลุ่มตาม Feedback ใหม่)
+    # Tabs รายสาขา (ปรับแก้ Logic จัดกลุ่ม DO + Sort เลนส์และค่าสายตา)
     # --------------------------------------------------------------------------
     MAX_ROWS_PER_PAGE = 28
-    MAX_DO_PER_PAGE = 8  # เพิ่มเป็นสูงสุด 8 DO ต่อหน้าตามที่ต้องการ
-    HEAVY_ITEM_THRESHOLD = 30  # เกณฑ์เลนส์เยอะเกิน 30 รายการ
+    MAX_DO_PER_PAGE = 8
+    HEAVY_ITEM_THRESHOLD = 30
 
     for store_id, group in store_groups:
         store_name = (
@@ -352,82 +352,81 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # --- จัดกลุ่ม DO ใหม่: แยก DO เลนส์เยอะ (>30 รายการ) เป็นเดี่ยวๆ ที่เหลือคละกันสูงสุด 8 DO ---
-        do_chunks = []
-        current_normal_chunk_cols = []
-        current_normal_chunk_dos = []
+        # 1. แยกแยะ DO ใหญ่ (>30 เลนส์) กับ DO ปกติ
+        heavy_cols, heavy_dos = [], []
+        normal_cols, normal_dos = [], []
 
         for c_idx, do_n in zip(store_cols_all, do_nums_all):
-            # นับจำนวนรายการเลนส์ใน DO นี้
             item_count = sum(
                 1
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-
             if item_count > HEAVY_ITEM_THRESHOLD:
-                # ถ้ามี DO ปกติค้างอยู่ ให้ปิดกลุ่มก่อน
-                if current_normal_chunk_cols:
-                    do_chunks.append(
-                        (
-                            current_normal_chunk_cols,
-                            current_normal_chunk_dos,
-                        )
-                    )
-                    current_normal_chunk_cols = []
-                    current_normal_chunk_dos = []
-
-                # แยก DO ใหญ่ไปอยู่เดี่ยวๆ ทันที
-                do_chunks.append(([c_idx], [do_n]))
+                heavy_cols.append(c_idx)
+                heavy_dos.append(do_n)
             else:
-                current_normal_chunk_cols.append(c_idx)
-                current_normal_chunk_dos.append(do_n)
+                normal_cols.append(c_idx)
+                normal_dos.append(do_n)
 
-                # ถ้าครบ 8 DO แล้ว ให้ตัดขึ้นกลุ่มใหม่
-                if len(current_normal_chunk_cols) == MAX_DO_PER_PAGE:
-                    do_chunks.append(
-                        (
-                            current_normal_chunk_cols,
-                            current_normal_chunk_dos,
-                        )
-                    )
-                    current_normal_chunk_cols = []
-                    current_normal_chunk_dos = []
+        # 2. จับกลุ่ม DO โดยทั้งกลุ่มใหญ่และกลุ่มปกติ จะจับมารวมกันหน้าละไม่เกิน 8 DO เพื่อประหยัดกระดาษ
+        do_chunks = []
 
-        if current_normal_chunk_cols:
+        # จัดกลุ่ม DO ใหญ่ (กลุ่มละไม่เกิน 8 DO)
+        for i in range(0, len(heavy_cols), MAX_DO_PER_PAGE):
             do_chunks.append(
-                (current_normal_chunk_cols, current_normal_chunk_dos)
+                (
+                    heavy_cols[i : i + MAX_DO_PER_PAGE],
+                    heavy_dos[i : i + MAX_DO_PER_PAGE],
+                )
             )
 
-        # --- สร้าง Worksheet แต่ละกลุ่ม DO ---
+        # จัดกลุ่ม DO ปกติ (กลุ่มละไม่เกิน 8 DO)
+        for i in range(0, len(normal_cols), MAX_DO_PER_PAGE):
+            do_chunks.append(
+                (
+                    normal_cols[i : i + MAX_DO_PER_PAGE],
+                    normal_dos[i : i + MAX_DO_PER_PAGE],
+                )
+            )
+
+        # 3. สร้าง Worksheet แต่ละกลุ่ม
         for chunk_idx, (current_cols, do_nums) in enumerate(do_chunks):
             num_dos = len(do_nums)
 
-            # กรองและจัดเรียงเลนส์เฉพาะที่มีการสั่งซื้อใน DO ชุดนี้
-            store_items_sorted = []
+            # กรองเลนส์และดึงข้อมูลมา Sort
+            store_items = []
             for r_idx in range(item_start_row, item_end_row + 1):
                 qty_subset = [
                     parse_num(raw_df.iloc[r_idx, c]) for c in current_cols
                 ]
                 if sum(qty_subset) == 0:
-                    continue  # ตัดเลนส์ที่ไม่มีการสั่งซื้อออกเด็ดขาด
+                    continue  # ตัดเลนส์ไม่มีการสั่งซื้อออก
 
-                first_do_idx = next(
-                    (i for i, q in enumerate(qty_subset) if q > 0), 999
-                )
-                store_items_sorted.append(
+                pid_val = raw_df.iloc[r_idx, col_mapping["pid"]]
+                name_val = raw_df.iloc[r_idx, col_mapping["name"]]
+                sph_val = parse_num(raw_df.iloc[r_idx, col_mapping["sph"]])
+                cyl_val = parse_num(raw_df.iloc[r_idx, col_mapping["cyl"]])
+
+                store_items.append(
                     {
                         "r_idx": r_idx,
-                        "first_do_idx": first_do_idx,
-                        "pid": raw_df.iloc[r_idx, col_mapping["pid"]],
-                        "name": raw_df.iloc[r_idx, col_mapping["name"]],
-                        "sph": raw_df.iloc[r_idx, col_mapping["sph"]],
-                        "cyl": raw_df.iloc[r_idx, col_mapping["cyl"]],
-                        "qty_subset": qty_subset,
+                        "pid": str(pid_val) if pd.notna(pid_val) else "",
+                        "name": str(name_val) if pd.notna(name_val) else "",
+                        "sph": sph_val,
+                        "cyl": cyl_val,
+                        "qty_subset": [
+                            int(q) if q == int(q) else q for q in qty_subset
+                        ],
                     }
                 )
 
-            store_items_sorted.sort(key=lambda x: (x["first_do_idx"], x["r_idx"]))
+            # --- แก้ไขจุดสำคัญ: SORT เรียงลำดับประเภทรุ่นเลนส์ + SPH + CYL ---
+            # เรียงตาม: 1. รุ่นเลนส์ (Name) -> 2. ค่าสายตา SPH (มากไปน้อย) -> 3. ค่าสายตา CYL (มากไปน้อย)
+            store_items_sorted = sorted(
+                store_items,
+                key=lambda x: (x["name"], -x["sph"], -x["cyl"], x["pid"]),
+            )
 
             sheet_title = (
                 base_title
@@ -470,7 +469,7 @@ def process_excel(uploaded_file):
                 )
                 chunk_items = store_items_sorted[start_item:end_item]
 
-                # --- 1. Header ประจำหน้า ---
+                # Header
                 ws.cell(
                     row=curr_row, column=1, value=f"Store ID: {store_id}"
                 ).font = Font(name="Cordia New", size=11, bold=True)
@@ -504,7 +503,7 @@ def process_excel(uploaded_file):
                 max_col_idx = 4 + num_dos
                 curr_row += 1
 
-                # --- 2. ข้อมูลสินค้า ---
+                # ข้อมูลรายการเลนส์ที่ Sort เรียบร้อยแล้ว
                 start_data_row = curr_row
                 for item in chunk_items:
                     ws.cell(
@@ -513,11 +512,16 @@ def process_excel(uploaded_file):
                     ws.cell(
                         row=curr_row, column=2, value=item["name"]
                     ).alignment = Alignment(horizontal="left")
+
+                    # ฟอร์แมตแสดงผล SPH / CYL ให้สวยงาม (+1.00, -0.50, 0.00)
+                    sph_fmt = f"{item['sph']:+.2f}" if item['sph'] != 0 else "0.00"
+                    cyl_fmt = f"{item['cyl']:+.2f}" if item['cyl'] != 0 else "0.00"
+
                     ws.cell(
-                        row=curr_row, column=3, value=item["sph"]
+                        row=curr_row, column=3, value=sph_fmt
                     ).alignment = Alignment(horizontal="right")
                     ws.cell(
-                        row=curr_row, column=4, value=item["cyl"]
+                        row=curr_row, column=4, value=cyl_fmt
                     ).alignment = Alignment(horizontal="right")
 
                     for idx_q, q_val in enumerate(item["qty_subset"]):
@@ -542,7 +546,7 @@ def process_excel(uploaded_file):
                     all_page_start_rows.append(start_data_row)
                     all_page_end_rows.append(end_data_row)
 
-                # --- 3. Grand Total เฉพาะหน้าสุดท้ายของกลุ่มนั้นๆ ---
+                # Grand Total หน้าสุดท้าย
                 if is_last_page:
                     ws.cell(
                         row=curr_row, column=1, value="Grand Total"
@@ -582,7 +586,7 @@ def process_excel(uploaded_file):
                         openpyxl.worksheet.pagebreak.Break(id=curr_row - 1)
                     )
 
-            # ตั้งค่าความกว้างคอลัมน์มาตรฐาน
+            # ความกว้างคอลัมน์
             ws.column_dimensions["A"].width = 14
             ws.column_dimensions["B"].width = 24
             ws.column_dimensions["C"].width = 9
@@ -620,7 +624,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อเริ่มจัดกลุ่มตามสาขา (จัดสูงสุด 8 DO/หน้า & แยก DO ใหญ่ >30 แถวให้อัตโนมัติ)<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดกลุ่ม DO สูงสุด 8 คอลัมน์ + เรียงลำดับเลนส์และค่าสายตา (SPH/CYL)<br>
         3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปใช้งานได้ทันที
     </div>
 """,
@@ -635,7 +639,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดระเบียบตารางและคำนวณยอด..."):
+        with st.spinner("⏳ กำลังจัดระเบียบตาราง เรียงค่าสายตา และคำนวณยอด..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

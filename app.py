@@ -335,10 +335,10 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (ปรับปรุงการแบ่งหน้า: สูงสุด 8 คอลัมน์ x 28 แถว)
+    # Tabs รายสาขา (ปรับปรุงตาม Feedback)
     # --------------------------------------------------------------------------
     MAX_ROWS_PER_PAGE = 28
-    MAX_DO_PER_PAGE = 4  # 4 DOs + 4 คอลัมน์หลัก (PID, Name, SPH, CYL) = 8 คอลัมน์พอดี
+    MAX_DO_PER_PAGE = 4
 
     for store_id, group in store_groups:
         store_name = (
@@ -351,35 +351,6 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # กรองเฉพาะสินค้าที่มีจำนวนสั่งซื้อในสาขานี้
-        store_items = []
-        for r_idx in range(item_start_row, item_end_row + 1):
-            qty_list_full = [
-                parse_num(raw_df.iloc[r_idx, c]) for c in store_cols_all
-            ]
-            if sum(qty_list_full) == 0:
-                continue
-
-            first_do_idx = next(
-                (i for i, q in enumerate(qty_list_full) if q > 0), 999
-            )
-            store_items.append(
-                {
-                    "r_idx": r_idx,
-                    "first_do_idx": first_do_idx,
-                    "pid": raw_df.iloc[r_idx, col_mapping["pid"]],
-                    "name": raw_df.iloc[r_idx, col_mapping["name"]],
-                    "sph": raw_df.iloc[r_idx, col_mapping["sph"]],
-                    "cyl": raw_df.iloc[r_idx, col_mapping["cyl"]],
-                    "qty_list_full": qty_list_full,
-                }
-            )
-
-        store_items_sorted = sorted(
-            store_items, key=lambda x: (x["first_do_idx"], x["r_idx"])
-        )
-
-        # ตัดแบ่งคอลัมน์ถ้า DO เกิน 4 ใบ (8 คอลัมน์รวม)
         total_dos = len(do_nums_all)
         num_do_chunks = math.ceil(total_dos / MAX_DO_PER_PAGE)
 
@@ -388,7 +359,34 @@ def process_excel(uploaded_file):
             end_do = min((chunk_idx + 1) * MAX_DO_PER_PAGE, total_dos)
 
             do_nums = do_nums_all[start_do:end_do]
+            current_cols = store_cols_all[start_do:end_do]
             num_dos = len(do_nums)
+
+            # --- แก้ไขจุดที่ 2: ตัดเลนส์ที่ไม่มีการสั่งซื้อ (ยอดสั่งซื้อใน DO ชุดนี้เป็น 0) ออกทั้งหมด ---
+            store_items_sorted = []
+            for r_idx in range(item_start_row, item_end_row + 1):
+                qty_subset = [
+                    parse_num(raw_df.iloc[r_idx, c]) for c in current_cols
+                ]
+                if sum(qty_subset) == 0:
+                    continue  # ข้ามเลนส์ที่ไม่มียอดสั่งซื้อทันที
+
+                first_do_idx = next(
+                    (i for i, q in enumerate(qty_subset) if q > 0), 999
+                )
+                store_items_sorted.append(
+                    {
+                        "r_idx": r_idx,
+                        "first_do_idx": first_do_idx,
+                        "pid": raw_df.iloc[r_idx, col_mapping["pid"]],
+                        "name": raw_df.iloc[r_idx, col_mapping["name"]],
+                        "sph": raw_df.iloc[r_idx, col_mapping["sph"]],
+                        "cyl": raw_df.iloc[r_idx, col_mapping["cyl"]],
+                        "qty_subset": qty_subset,
+                    }
+                )
+
+            store_items_sorted.sort(key=lambda x: (x["first_do_idx"], x["r_idx"]))
 
             sheet_title = (
                 base_title
@@ -406,7 +404,6 @@ def process_excel(uploaded_file):
             ws.sheet_properties.pageSetUpPr.horizontalCentered = True
             ws.page_setup.blackAndWhite = True
 
-            # ปรับระยะขอบกระดาษให้แคบลง (Narrow Margins)
             ws.page_margins.left = 0.25
             ws.page_margins.right = 0.25
             ws.page_margins.top = 0.4
@@ -420,14 +417,20 @@ def process_excel(uploaded_file):
                 else 1
             )
 
+            # เก็บตำแหน่งบรรทัดเริ่มต้นข้อมูลของแต่ละหน้าเพื่อคำนวณ Grand Total รวมหน้าสุดท้าย
+            all_page_start_rows = []
+            all_page_end_rows = []
+
             for r_chunk in range(num_row_chunks):
+                is_last_page = r_chunk == (num_row_chunks - 1)
+
                 start_item = r_chunk * MAX_ROWS_PER_PAGE
                 end_item = min(
                     (r_chunk + 1) * MAX_ROWS_PER_PAGE, total_items
                 )
                 chunk_items = store_items_sorted[start_item:end_item]
 
-                # --- 1. ส่วน Header ประจำบล็อก/หน้า ---
+                # --- 1. ส่วน Header ประจำหน้า ---
                 ws.cell(
                     row=curr_row, column=1, value=f"Store ID: {store_id}"
                 ).font = Font(name="Cordia New", size=11, bold=True)
@@ -459,10 +462,9 @@ def process_excel(uploaded_file):
                     )
 
                 max_col_idx = 4 + num_dos
-                header_data_row = curr_row
                 curr_row += 1
 
-                # --- 2. ส่วนข้อมูลสินค้า (ไม่เกิน 28 แถวต่อบล็อก) ---
+                # --- 2. ส่วนข้อมูลสินค้า ---
                 start_data_row = curr_row
                 for item in chunk_items:
                     ws.cell(
@@ -478,8 +480,7 @@ def process_excel(uploaded_file):
                         row=curr_row, column=4, value=item["cyl"]
                     ).alignment = Alignment(horizontal="right")
 
-                    qty_subset = item["qty_list_full"][start_do:end_do]
-                    for idx_q, q_val in enumerate(qty_subset):
+                    for idx_q, q_val in enumerate(item["qty_subset"]):
                         c_i = 5 + idx_q
                         ws.cell(
                             row=curr_row,
@@ -496,42 +497,52 @@ def process_excel(uploaded_file):
 
                     curr_row += 1
 
-                # --- 3. ส่วนสรุปผลรวมประจำหน้า (Grand Total) ---
-                ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
-                    name="Cordia New", size=11, bold=True
-                )
-                ws.cell(row=curr_row, column=1).alignment = Alignment(
-                    horizontal="center"
-                )
+                end_data_row = curr_row - 1
+                if start_data_row <= end_data_row:
+                    all_page_start_rows.append(start_data_row)
+                    all_page_end_rows.append(end_data_row)
 
-                for idx_q in range(num_dos):
-                    col_idx = 5 + idx_q
-                    col_letter = get_column_letter(col_idx)
-                    if start_data_row <= curr_row - 1:
+                # --- แก้ไขจุดที่ 1: แสดง Grand Total เฉพาะหน้าสุดท้ายเท่านั้น ---
+                if is_last_page:
+                    ws.cell(
+                        row=curr_row, column=1, value="Grand Total"
+                    ).font = Font(name="Cordia New", size=11, bold=True)
+                    ws.cell(row=curr_row, column=1).alignment = Alignment(
+                        horizontal="center"
+                    )
+
+                    for idx_q in range(num_dos):
+                        col_idx = 5 + idx_q
+                        col_letter = get_column_letter(col_idx)
+
+                        if all_page_start_rows:
+                            # รวมสูตร SUM ทุกช่วงข้อมูลตั้งแต่หน้าแรกจนถึงหน้าสุดท้าย
+                            sum_parts = [
+                                f"{col_letter}{s}:{col_letter}{e}"
+                                for s, e in zip(
+                                    all_page_start_rows, all_page_end_rows
+                                )
+                            ]
+                            sum_formula = f"=SUM({','.join(sum_parts)})"
+                        else:
+                            sum_formula = 0
+
                         ws.cell(
-                            row=curr_row,
-                            column=col_idx,
-                            value=f"=SUM({col_letter}{start_data_row}:{col_letter}{curr_row-1})",
+                            row=curr_row, column=col_idx, value=sum_formula
                         ).font = Font(name="Cordia New", size=11, bold=True)
-                    else:
-                        ws.cell(row=curr_row, column=col_idx, value=0).font = (
-                            Font(name="Cordia New", size=11, bold=True)
+                        ws.cell(row=curr_row, column=col_idx).alignment = (
+                            Alignment(horizontal="right")
                         )
-                    ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
-                        horizontal="right"
-                    )
 
-                for c in range(1, max_col_idx + 1):
-                    cell = ws.cell(row=curr_row, column=c)
-                    cell.fill = HEADER_FILL
-                    cell.border = header_border
-
-                # ใส่จุดแบ่งหน้า (Page Break) สำหรับพิมพ์หน้า-หลัง หรือขึ้นกระดาษใบใหม่
-                if r_chunk < num_row_chunks - 1:
+                    for c in range(1, max_col_idx + 1):
+                        cell = ws.cell(row=curr_row, column=c)
+                        cell.fill = HEADER_FILL
+                        cell.border = header_border
+                else:
+                    # ถ้าไม่ใช่หน้าสุดท้าย ใส่จุดแบ่งหน้า (Page Break)
                     ws.row_breaks.append(
-                        openpyxl.worksheet.pagebreak.Break(id=curr_row)
+                        openpyxl.worksheet.pagebreak.Break(id=curr_row - 1)
                     )
-                    curr_row += 2  # เว้นช่องว่างระหว่างหน้าเล็กน้อย
 
             # ตั้งค่าความกว้างคอลัมน์มาตรฐาน
             ws.column_dimensions["A"].width = 14
@@ -593,9 +604,9 @@ if uploaded_file is not None:
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 st.download_button(
-                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Optimized Print Layout)",
+                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Clean Print Layout)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Optimized.xlsx",
+                    file_name="Consolidated_Picking_Lists_Clean.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

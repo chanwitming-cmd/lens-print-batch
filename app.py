@@ -228,13 +228,13 @@ def process_excel(uploaded_file):
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
     ws_summary.views.sheetView[0].showGridLines = True
 
-    # --- ตั้งค่าการพิมพ์ (Print Setup) สำหรับ Summary ---
+    # ตั้งค่าหน้ากระดาษพิมพ์สำหรับ Summary
     ws_summary.page_setup.orientation = ws_summary.ORIENTATION_LANDSCAPE
     ws_summary.page_setup.paperSize = ws_summary.PAPERSIZE_A4
     ws_summary.page_setup.fitToWidth = 1
     ws_summary.page_setup.fitToHeight = 0
     ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
-    ws_summary.print_title_rows = "1:3"  # หัวตารางพิมพ์ซ้ำ
+    ws_summary.print_title_rows = "1:3"
     ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
 
     ws_summary.merge_cells("A1:E1")
@@ -334,7 +334,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (แบบ Compact ตัด Item Type ออก)
+    # Tabs รายสาขา
     # --------------------------------------------------------------------------
     for store_id, group in store_groups:
         store_name = (
@@ -346,13 +346,13 @@ def process_excel(uploaded_file):
         ws = wb_out.create_sheet(title=safe_title)
         ws.views.sheetView[0].showGridLines = True
 
-        # --- ตั้งค่าการพิมพ์ (Print Setup) สำหรับแต่ละสาขา ---
+        # ตั้งค่าหน้ากระดาษพิมพ์สำหรับแต่ละสาขา
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
-        ws.page_setup.fitToWidth = 1  # บังคับความกว้างให้พอดี 1 หน้ากระดาษ
-        ws.page_setup.fitToHeight = 0 # ปล่อยความสูงตามจำนวนแถว
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
         ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.print_title_rows = "1:4"  # กำหนดให้แถว 1 ถึง 4 พิมพ์ซ้ำทุกหน้าเวลาพิมพ์ยาวหลายหน้า
+        ws.print_title_rows = "1:4"
         ws.sheet_properties.pageSetUpPr.horizontalCentered = True
 
         store_cols = group["col_idx"].tolist()
@@ -499,6 +499,10 @@ def process_excel(uploaded_file):
         for idx_q in range(len(store_cols)):
             ws.column_dimensions[get_column_letter(5 + idx_q)].width = 16
         ws.column_dimensions[get_column_letter(total_col_idx)].width = 14
+
+    # --- เลือก (Select) ทุก Sheet ไว้เพื่อให้กดพิมพ์ครั้งเดียวออกหมดทันที ---
+    for sheet in wb_out.worksheets:
+        sheet.sheet_view.tabSelected = True
 
     output = io.BytesIO()
     wb_out.save(output)

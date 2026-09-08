@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.pagebreak import Break
 
 # ==============================================================================
 # 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
@@ -133,14 +134,13 @@ def parse_num(val):
         return 0.0
 
 
-def setup_sheet_page_layout(ws):
-    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 ชิดซ้าย พร้อมดันตารางขึ้นด้านบนสุด (ขอบกระดาษแคบ)"""
+def setup_sheet_page_layout(ws, is_heavy=False):
+    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 ชิดซ้าย ขอบกระดาษแคบ"""
     ws.views.sheetView[0].showGridLines = True
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.blackAndWhite = True
 
-    # ปรับขอบกระดาษให้แคบ (0.25 นิ้ว) เพื่อดันตารางขึ้นบนสุดและเพิ่มพื้นที่พิมพ์ 30 แถว
     ws.page_margins.top = 0.25
     ws.page_margins.bottom = 0.25
     ws.page_margins.left = 0.25
@@ -148,9 +148,14 @@ def setup_sheet_page_layout(ws):
     ws.page_margins.header = 0.1
     ws.page_margins.footer = 0.1
 
-    # ปิดการจัดกึ่งกลางเพื่อให้ชิดซ้ายมุมบน
     ws.print_options.horizontalCentered = False
     ws.print_options.verticalCentered = False
+
+    if not is_heavy:
+        # สาขาปกติ บังคับ Fit to 1 page
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 1
 
 
 def process_excel(uploaded_file):
@@ -232,11 +237,14 @@ def process_excel(uploaded_file):
         left=thin_black, right=thin_black, top=thin_black, bottom=double_black
     )
 
+    fill_green = PatternFill(start_color="E2EFDA", fill_type="solid")
+    fill_peach = PatternFill(start_color="FCE4D6", fill_type="solid")
+
     # --------------------------------------------------------------------------
     # Tab 1: Summary All Stores
     # --------------------------------------------------------------------------
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
-    setup_sheet_page_layout(ws_summary)
+    setup_sheet_page_layout(ws_summary, is_heavy=False)
 
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
@@ -248,6 +256,25 @@ def process_excel(uploaded_file):
     ws_summary["A1"].alignment = Alignment(
         horizontal="center", vertical="center"
     )
+
+    # คำอธิบายสัญลักษณ์สี Sheet (Color Legend)
+    ws_summary.cell(
+        row=1, column=7, value="🟢 Tab สีเขียว:"
+    ).font = Font(name="Cordia New", size=11, bold=True)
+    cell_lg_g = ws_summary.cell(
+        row=1, column=8, value="สั่งพิมพ์รวมได้ทันที (ไม่เกิน 8 DO / 30 แถว)"
+    )
+    cell_lg_g.font = Font(name="Cordia New", size=11)
+    cell_lg_g.fill = fill_green
+
+    ws_summary.cell(
+        row=2, column=7, value="🔴 Tab สีแดง:"
+    ).font = Font(name="Cordia New", size=11, bold=True)
+    cell_lg_r = ws_summary.cell(
+        row=2, column=8, value="ต้องสั่งพิมพ์แยกทีละ Sheet (เกิน 8 DO / 30 แถว)"
+    )
+    cell_lg_r.font = Font(name="Cordia New", size=11)
+    cell_lg_r.fill = fill_peach
 
     headers_summary = [
         "ลำดับ",
@@ -329,6 +356,8 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["C"].width = 38
     ws_summary.column_dimensions["D"].width = 16
     ws_summary.column_dimensions["E"].width = 22
+    ws_summary.column_dimensions["G"].width = 16
+    ws_summary.column_dimensions["H"].width = 45
 
     # --------------------------------------------------------------------------
     # 3. คัดแยกประเภทสาขา (แยกสาขาเกินไว้หน้าสุด + สาขาปกติต่อท้าย)
@@ -346,7 +375,6 @@ def process_excel(uploaded_file):
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
-        # ปรับเกณฑ์แยกสี Sheet ถ้าเกิน 30 แถว หรือ เกิน 8 DO ให้แยกไว้หน้าสุด
         if active_items_count > 30 or num_dos > 8:
             priority_stores.append((store_id, group, True))
         else:
@@ -377,7 +405,6 @@ def process_excel(uploaded_file):
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            # ปรับเกณฑ์ DO เดี่ยวเกิน 30 แถว
             if do_item_count > 30:
                 heavy_dos_info.append((c_idx, do_n))
             else:
@@ -387,51 +414,14 @@ def process_excel(uploaded_file):
         ordered_do_nums = [x[1] for x in ordered_dos]
         num_dos = len(ordered_do_nums)
 
-        final_rows_list = []
-
-        for idx_do, (c_idx, do_n) in enumerate(ordered_dos):
-            do_items = []
-            for r_idx in range(item_start_row, item_end_row + 1):
-                q_val = parse_num(raw_df.iloc[r_idx, c_idx])
-                if q_val > 0:
-                    pid_val = raw_df.iloc[r_idx, col_mapping["pid"]]
-                    name_val = raw_df.iloc[r_idx, col_mapping["name"]]
-                    sph_val = parse_num(raw_df.iloc[r_idx, col_mapping["sph"]])
-                    cyl_val = parse_num(raw_df.iloc[r_idx, col_mapping["cyl"]])
-
-                    do_items.append(
-                        {
-                            "pid": str(pid_val) if pd.notna(pid_val) else "",
-                            "name": (
-                                str(name_val) if pd.notna(name_val) else ""
-                            ),
-                            "sph": sph_val,
-                            "cyl": cyl_val,
-                            "qty": int(q_val) if q_val == int(q_val) else q_val,
-                            "do_col_index": idx_do,
-                        }
-                    )
-
-            do_items_sorted = sorted(
-                do_items,
-                key=lambda x: (x["name"], -x["sph"], -x["cyl"], x["pid"]),
-            )
-
-            for item in do_items_sorted:
-                qty_array = [None] * num_dos
-                qty_array[item["do_col_index"]] = item["qty"]
-                final_rows_list.append(
-                    {
-                        "pid": item["pid"],
-                        "name": item["name"],
-                        "sph": item["sph"],
-                        "cyl": item["cyl"],
-                        "qtys": qty_array,
-                    }
-                )
+        chunk_size = 8
+        do_chunks = [
+            ordered_dos[i : i + chunk_size]
+            for i in range(0, num_dos, chunk_size)
+        ]
 
         ws = wb_out.create_sheet(title=sheet_title)
-        setup_sheet_page_layout(ws)
+        setup_sheet_page_layout(ws, is_heavy=is_heavy)
 
         if is_heavy:
             ws.sheet_properties.tabColor = "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล
@@ -439,109 +429,175 @@ def process_excel(uploaded_file):
             ws.sheet_properties.tabColor = "E2EFDA"  # สีเขียวอ่อนพาสเทล
 
         curr_row = 1
+        total_chunks = len(do_chunks)
 
-        ws.cell(
-            row=curr_row, column=1, value=f"Store ID: {store_id}"
-        ).font = Font(name="Cordia New", size=11, bold=True)
-        ws.cell(
-            row=curr_row, column=3, value=f"Store Name: {store_name}"
-        ).font = Font(name="Cordia New", size=11, bold=True)
-        curr_row += 1
+        for chunk_idx, chunk_dos in enumerate(do_chunks):
+            chunk_do_nums = [x[1] for x in chunk_dos]
+            chunk_num_dos = len(chunk_dos)
+            is_last_chunk = chunk_idx == (total_chunks - 1)
 
-        base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
-        for col_i, h_text in enumerate(base_headers, 1):
-            cell = ws.cell(row=curr_row, column=col_i, value=h_text)
-            cell.font = Font(
-                name="Cordia New", size=11, bold=True, color="000000"
-            )
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = header_border
+            chunk_items_list = []
+            for sub_do_idx, (c_idx, do_n) in enumerate(chunk_dos):
+                do_items = []
+                for r_idx in range(item_start_row, item_end_row + 1):
+                    q_val = parse_num(raw_df.iloc[r_idx, c_idx])
+                    if q_val > 0:
+                        pid_val = raw_df.iloc[r_idx, col_mapping["pid"]]
+                        name_val = raw_df.iloc[r_idx, col_mapping["name"]]
+                        sph_val = parse_num(
+                            raw_df.iloc[r_idx, col_mapping["sph"]]
+                        )
+                        cyl_val = parse_num(
+                            raw_df.iloc[r_idx, col_mapping["cyl"]]
+                        )
 
-        for idx_q, do_n in enumerate(ordered_do_nums):
-            c_i = 5 + idx_q
-            cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
-            cell.font = Font(
-                name="Cordia New", size=11, bold=True, color="000000"
-            )
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = header_border
+                        do_items.append(
+                            {
+                                "pid": (
+                                    str(pid_val) if pd.notna(pid_val) else ""
+                                ),
+                                "name": (
+                                    str(name_val) if pd.notna(name_val) else ""
+                                ),
+                                "sph": sph_val,
+                                "cyl": cyl_val,
+                                "qty": (
+                                    int(q_val) if q_val == int(q_val) else q_val
+                                ),
+                                "sub_do_idx": sub_do_idx,
+                            }
+                        )
 
-        max_col_idx = 4 + num_dos
-        curr_row += 1
-        start_data_row = curr_row
-
-        for row_data in final_rows_list:
-            row_data_row = curr_row
-            ws.cell(row=row_data_row, column=1, value=row_data["pid"]).alignment = (
-                Alignment(horizontal="center")
-            )
-            ws.cell(
-                row=row_data_row, column=2, value=row_data["name"]
-            ).alignment = Alignment(horizontal="left")
-
-            sph_fmt = (
-                f"{row_data['sph']:+.2f}" if row_data["sph"] != 0 else "0.00"
-            )
-            cyl_fmt = (
-                f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
-            )
-
-            ws.cell(row=row_data_row, column=3, value=sph_fmt).alignment = Alignment(
-                horizontal="right"
-            )
-            ws.cell(row=row_data_row, column=4, value=cyl_fmt).alignment = Alignment(
-                horizontal="right"
-            )
-
-            for idx_q, q_val in enumerate(row_data["qtys"]):
-                c_i = 5 + idx_q
-                ws.cell(row=row_data_row, column=c_i, value=q_val).alignment = (
-                    Alignment(horizontal="right")
+                do_items_sorted = sorted(
+                    do_items,
+                    key=lambda x: (x["name"], -x["sph"], -x["cyl"], x["pid"]),
                 )
 
-            for c in range(1, max_col_idx + 1):
-                cell = ws.cell(row=row_data_row, column=c)
-                cell.font = Font(name="Cordia New", size=11)
-                cell.border = box_border
+                for item in do_items_sorted:
+                    qty_array = [None] * chunk_num_dos
+                    qty_array[item["sub_do_idx"]] = item["qty"]
+                    chunk_items_list.append(
+                        {
+                            "pid": item["pid"],
+                            "name": item["name"],
+                            "sph": item["sph"],
+                            "cyl": item["cyl"],
+                            "qtys": qty_array,
+                        }
+                    )
 
+            if chunk_idx > 0:
+                ws.row_breaks.append(Break(id=curr_row - 1))
+
+            ws.cell(
+                row=curr_row, column=1, value=f"Store ID: {store_id}"
+            ).font = Font(name="Cordia New", size=11, bold=True)
+            ws.cell(
+                row=curr_row, column=3, value=f"Store Name: {store_name}"
+            ).font = Font(name="Cordia New", size=11, bold=True)
             curr_row += 1
 
-        end_data_row = curr_row - 1
-
-        ws.cell(row=curr_row, column=1, value="Grand Total").font = Font(
-            name="Cordia New", size=11, bold=True
-        )
-        ws.cell(row=curr_row, column=1).alignment = Alignment(
-            horizontal="center"
-        )
-
-        for idx_q in range(num_dos):
-            col_idx = 5 + idx_q
-            col_letter = get_column_letter(col_idx)
-
-            if start_data_row <= end_data_row:
-                sum_formula = (
-                    f"=SUM({col_letter}{start_data_row}:{col_letter}{end_data_row})"
+            base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
+            for col_i, h_text in enumerate(base_headers, 1):
+                cell = ws.cell(row=curr_row, column=col_i, value=h_text)
+                cell.font = Font(
+                    name="Cordia New", size=11, bold=True, color="000000"
                 )
-            else:
-                sum_formula = 0
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+                cell.border = header_border
 
-            ws.cell(row=curr_row, column=col_idx, value=sum_formula).font = Font(
-                name="Cordia New", size=11, bold=True
-            )
-            ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
-                horizontal="right"
-            )
+            for idx_q, do_n in enumerate(chunk_do_nums):
+                c_i = 5 + idx_q
+                cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
+                cell.font = Font(
+                    name="Cordia New", size=11, bold=True, color="000000"
+                )
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+                cell.border = header_border
 
-        for c in range(1, max_col_idx + 1):
-            cell = ws.cell(row=curr_row, column=c)
-            cell.border = total_border
+            max_col_idx = 4 + chunk_num_dos
+            curr_row += 1
+            start_data_row = curr_row
+
+            for row_data in chunk_items_list:
+                row_data_row = curr_row
+                ws.cell(
+                    row=row_data_row, column=1, value=row_data["pid"]
+                ).alignment = Alignment(horizontal="center")
+                ws.cell(
+                    row=row_data_row, column=2, value=row_data["name"]
+                ).alignment = Alignment(horizontal="left")
+
+                sph_fmt = (
+                    f"{row_data['sph']:+.2f}" if row_data["sph"] != 0 else "0.00"
+                )
+                cyl_fmt = (
+                    f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
+                )
+
+                ws.cell(
+                    row=row_data_row, column=3, value=sph_fmt
+                ).alignment = Alignment(horizontal="right")
+                ws.cell(
+                    row=row_data_row, column=4, value=cyl_fmt
+                ).alignment = Alignment(horizontal="right")
+
+                for idx_q, q_val in enumerate(row_data["qtys"]):
+                    c_i = 5 + idx_q
+                    ws.cell(
+                        row=row_data_row, column=c_i, value=q_val
+                    ).alignment = Alignment(horizontal="right")
+
+                for c in range(1, max_col_idx + 1):
+                    cell = ws.cell(row=row_data_row, column=c)
+                    cell.font = Font(name="Cordia New", size=11)
+                    cell.border = box_border
+
+                curr_row += 1
+
+            end_data_row = curr_row - 1
+
+            if is_last_chunk:
+                ws.cell(
+                    row=curr_row, column=1, value="Grand Total"
+                ).font = Font(name="Cordia New", size=11, bold=True)
+                ws.cell(row=curr_row, column=1).alignment = Alignment(
+                    horizontal="center"
+                )
+
+                for idx_q in range(chunk_num_dos):
+                    col_idx = 5 + idx_q
+                    col_letter = get_column_letter(col_idx)
+
+                    if start_data_row <= end_data_row:
+                        sum_formula = f"=SUM({col_letter}{start_data_row}:{col_letter}{end_data_row})"
+                    else:
+                        sum_formula = 0
+
+                    ws.cell(
+                        row=curr_row, column=col_idx, value=sum_formula
+                    ).font = Font(name="Cordia New", size=11, bold=True)
+                    ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
+                        horizontal="right"
+                    )
+
+                for c in range(1, max_col_idx + 1):
+                    cell = ws.cell(row=curr_row, column=c)
+                    cell.border = total_border
+
+                curr_row += 1
+
+            curr_row += 1
 
         ws.column_dimensions["A"].width = 14
         ws.column_dimensions["B"].width = 24
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
-        for idx_q in range(num_dos):
+        for idx_q in range(min(8, num_dos)):
             ws.column_dimensions[get_column_letter(5 + idx_q)].width = 13
 
     for sheet in wb_out.worksheets:
@@ -572,7 +628,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ขยับชิดบนเพิ่มพื้นที่สูงสุด 30 แถว<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + แสดงคำอธิบายสีในหน้า Summary<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -587,7 +643,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับตั้งค่าพื้นที่พิมพ์ 30 แถว..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และสร้างหน้า Summary..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

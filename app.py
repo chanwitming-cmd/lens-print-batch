@@ -133,6 +133,22 @@ def parse_num(val):
         return 0.0
 
 
+def setup_sheet_page_layout(ws):
+    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 บีบลง 1 หน้าพอดี"""
+    ws.views.sheetView[0].showGridLines = True
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.blackAndWhite = True
+
+    # บังคับ Fit to 1 page
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+
+    # จัดกึ่งกลางแนวนอน
+    ws.print_options.horizontalCentered = True
+
+
 def process_excel(uploaded_file):
     wb_raw = openpyxl.load_workbook(uploaded_file)
     ws_raw = wb_raw.active
@@ -216,17 +232,7 @@ def process_excel(uploaded_file):
     # Tab 1: Summary All Stores
     # --------------------------------------------------------------------------
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
-    ws_summary.views.sheetView[0].showGridLines = True
-
-    # ตั้งค่ากระดาษพิมพ์แบบคลีนแนวนอน + ล็อคพิมพ์ 1 หน้า
-    ws_summary.page_setup.orientation = ws_summary.ORIENTATION_LANDSCAPE
-    ws_summary.page_setup.paperSize = ws_summary.PAPERSIZE_A4
-    ws_summary.page_setup.blackAndWhite = True
-    ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
-    ws_summary.page_setup.fitToWidth = 1
-    ws_summary.page_setup.fitToHeight = 1
-    ws_summary.sheet_properties.pageSetUpPr.horizontalCentered = True
-    ws_summary.page_setup.usePrinterDefaults = False
+    setup_sheet_page_layout(ws_summary)
 
     ws_summary.merge_cells("A1:E1")
     ws_summary["A1"] = (
@@ -419,22 +425,12 @@ def process_excel(uploaded_file):
                 )
 
         ws = wb_out.create_sheet(title=sheet_title)
-        ws.views.sheetView[0].showGridLines = True
+        setup_sheet_page_layout(ws)
 
         if is_heavy:
             ws.sheet_properties.tabColor = "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล
         else:
             ws.sheet_properties.tabColor = "E2EFDA"  # สีเขียวอ่อนพาสเทล
-
-        # ตั้งค่าการจัดหน้ากระดาษ + บังคับไม่ใช้ค่า Print Default ของเครื่องพิมพ์
-        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-        ws.page_setup.paperSize = ws.PAPERSIZE_A4
-        ws.page_setup.blackAndWhite = True
-        ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 1
-        ws.sheet_properties.pageSetUpPr.horizontalCentered = True
-        ws.page_setup.usePrinterDefaults = False
 
         curr_row = 1
 
@@ -469,11 +465,11 @@ def process_excel(uploaded_file):
         start_data_row = curr_row
 
         for row_data in final_rows_list:
-            ws.cell(row=curr_row, column=1, value=row_data["pid"]).alignment = (
+            ws.cell(row=row_data_row := curr_row, column=1, value=row_data["pid"]).alignment = (
                 Alignment(horizontal="center")
             )
             ws.cell(
-                row=curr_row, column=2, value=row_data["name"]
+                row=row_data_row, column=2, value=row_data["name"]
             ).alignment = Alignment(horizontal="left")
 
             sph_fmt = (
@@ -483,21 +479,21 @@ def process_excel(uploaded_file):
                 f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
             )
 
-            ws.cell(row=curr_row, column=3, value=sph_fmt).alignment = Alignment(
+            ws.cell(row=row_data_row, column=3, value=sph_fmt).alignment = Alignment(
                 horizontal="right"
             )
-            ws.cell(row=curr_row, column=4, value=cyl_fmt).alignment = Alignment(
+            ws.cell(row=row_data_row, column=4, value=cyl_fmt).alignment = Alignment(
                 horizontal="right"
             )
 
             for idx_q, q_val in enumerate(row_data["qtys"]):
                 c_i = 5 + idx_q
-                ws.cell(row=curr_row, column=c_i, value=q_val).alignment = (
+                ws.cell(row=row_data_row, column=c_i, value=q_val).alignment = (
                     Alignment(horizontal="right")
                 )
 
             for c in range(1, max_col_idx + 1):
-                cell = ws.cell(row=curr_row, column=c)
+                cell = ws.cell(row=row_data_row, column=c)
                 cell.font = Font(name="Cordia New", size=11)
                 cell.border = box_border
 
@@ -569,8 +565,8 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ฝังค่าพิมพ์หน้าเดียวอัตโนมัติ<br>
-        3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเลือกสั่งพิมพ์กลุ่มสีเขียวได้ทันที
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ตั้งค่าแนวนอนและ 1 หน้าอัตโนมัติ<br>
+        3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
     unsafe_allow_html=True,

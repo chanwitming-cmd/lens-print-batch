@@ -134,13 +134,21 @@ def parse_num(val):
 
 
 def setup_sheet_page_layout(ws):
-    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 ชิดซ้าย ไม่จัดกึ่งกลาง"""
+    """ตั้งค่าหน้ากระดาษแบบแนวนอน A4 ชิดซ้าย พร้อมดันตารางขึ้นด้านบนสุด (ขอบกระดาษแคบ)"""
     ws.views.sheetView[0].showGridLines = True
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.blackAndWhite = True
 
-    # บังคับชิดซ้าย (ปิดการจัดกึ่งกลางแนวนอนและแนวตั้ง)
+    # ปรับขอบกระดาษให้แคบ (0.25 นิ้ว) เพื่อดันตารางขึ้นบนสุดและเพิ่มพื้นที่พิมพ์ 30 แถว
+    ws.page_margins.top = 0.25
+    ws.page_margins.bottom = 0.25
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.header = 0.1
+    ws.page_margins.footer = 0.1
+
+    # ปิดการจัดกึ่งกลางเพื่อให้ชิดซ้ายมุมบน
     ws.print_options.horizontalCentered = False
     ws.print_options.verticalCentered = False
 
@@ -338,7 +346,8 @@ def process_excel(uploaded_file):
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
-        if active_items_count > 28 or num_dos > 8:
+        # ปรับเกณฑ์แยกสี Sheet ถ้าเกิน 30 แถว หรือ เกิน 8 DO ให้แยกไว้หน้าสุด
+        if active_items_count > 30 or num_dos > 8:
             priority_stores.append((store_id, group, True))
         else:
             normal_stores.append((store_id, group, False))
@@ -368,7 +377,8 @@ def process_excel(uploaded_file):
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            if do_item_count > 28:
+            # ปรับเกณฑ์ DO เดี่ยวเกิน 30 แถว
+            if do_item_count > 30:
                 heavy_dos_info.append((c_idx, do_n))
             else:
                 normal_dos_info.append((c_idx, do_n))
@@ -562,7 +572,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ตั้งค่าแนวนอนชิดซ้ายอัตโนมัติ<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + ขยับชิดบนเพิ่มพื้นที่สูงสุด 30 แถว<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -577,7 +587,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับตารางชิดซ้ายมุมบน..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับตั้งค่าพื้นที่พิมพ์ 30 แถว..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

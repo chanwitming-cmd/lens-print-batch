@@ -321,7 +321,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา
+    # 3. คัดแยกประเภทสาขา (แยกสาขาเกินไว้หน้าสุด + สาขาปกติต่อท้าย)
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -336,11 +336,13 @@ def process_excel(uploaded_file):
             if any(parse_num(raw_df.iloc[r, c]) > 0 for c in st_cols)
         )
 
+        # เงื่อนไข: เกิน 28 รายการ หรือ เกิน 8 คอลัมน์ (DO)
         if active_items_count > 28 or num_dos > 8:
             priority_stores.append((store_id, group, True))
         else:
             normal_stores.append((store_id, group, False))
 
+    # รวมรายการโดยเอาสาขาที่เกินขึ้นก่อน แล้วตามด้วยสาขาปกติ
     sorted_store_groups = priority_stores + normal_stores
 
     # --------------------------------------------------------------------------
@@ -420,6 +422,16 @@ def process_excel(uploaded_file):
 
         ws = wb_out.create_sheet(title=sheet_title)
         ws.views.sheetView[0].showGridLines = True
+
+        # ใส่สี Tab Sheet (พาสเทลอ่อนๆ สบายตา)
+        if is_heavy:
+            ws.sheet_properties.tabColor = (
+                "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล (สำหรับสาขาที่เกิน)
+            )
+        else:
+            ws.sheet_properties.tabColor = (
+                "E2EFDA"  # สีเขียวอ่อนพาสเทล (สำหรับสาขาปกติ)
+            )
 
         # ตั้งค่าการจัดหน้ากระดาษ: แนวนอน A4 + ขาวดำ + บังคับ 1 หน้าสำหรับทุก Sheet
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
@@ -591,7 +603,7 @@ if uploaded_file is not None:
                 st.download_button(
                     label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Consolidated Lists)",
                     data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Clean_Print.xlsx",
+                    file_name="Consolidated_Picking_Lists_Grouped.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:

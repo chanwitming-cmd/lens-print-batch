@@ -335,10 +335,11 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["E"].width = 22
 
     # --------------------------------------------------------------------------
-    # Tabs รายสาขา (ปรับปรุงตาม Feedback)
+    # Tabs รายสาขา (ปรับเกณฑ์การจัดกลุ่มตาม Feedback ใหม่)
     # --------------------------------------------------------------------------
     MAX_ROWS_PER_PAGE = 28
-    MAX_DO_PER_PAGE = 4
+    MAX_DO_PER_PAGE = 8  # เพิ่มเป็นสูงสุด 8 DO ต่อหน้าตามที่ต้องการ
+    HEAVY_ITEM_THRESHOLD = 30  # เกณฑ์เลนส์เยอะเกิน 30 รายการ
 
     for store_id, group in store_groups:
         store_name = (
@@ -351,25 +352,65 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        total_dos = len(do_nums_all)
-        num_do_chunks = math.ceil(total_dos / MAX_DO_PER_PAGE)
+        # --- จัดกลุ่ม DO ใหม่: แยก DO เลนส์เยอะ (>30 รายการ) เป็นเดี่ยวๆ ที่เหลือคละกันสูงสุด 8 DO ---
+        do_chunks = []
+        current_normal_chunk_cols = []
+        current_normal_chunk_dos = []
 
-        for chunk_idx in range(num_do_chunks):
-            start_do = chunk_idx * MAX_DO_PER_PAGE
-            end_do = min((chunk_idx + 1) * MAX_DO_PER_PAGE, total_dos)
+        for c_idx, do_n in zip(store_cols_all, do_nums_all):
+            # นับจำนวนรายการเลนส์ใน DO นี้
+            item_count = sum(
+                1
+                for r in range(item_start_row, item_end_row + 1)
+                if parse_num(raw_df.iloc[r, c_idx]) > 0
+            )
 
-            do_nums = do_nums_all[start_do:end_do]
-            current_cols = store_cols_all[start_do:end_do]
+            if item_count > HEAVY_ITEM_THRESHOLD:
+                # ถ้ามี DO ปกติค้างอยู่ ให้ปิดกลุ่มก่อน
+                if current_normal_chunk_cols:
+                    do_chunks.append(
+                        (
+                            current_normal_chunk_cols,
+                            current_normal_chunk_dos,
+                        )
+                    )
+                    current_normal_chunk_cols = []
+                    current_normal_chunk_dos = []
+
+                # แยก DO ใหญ่ไปอยู่เดี่ยวๆ ทันที
+                do_chunks.append(([c_idx], [do_n]))
+            else:
+                current_normal_chunk_cols.append(c_idx)
+                current_normal_chunk_dos.append(do_n)
+
+                # ถ้าครบ 8 DO แล้ว ให้ตัดขึ้นกลุ่มใหม่
+                if len(current_normal_chunk_cols) == MAX_DO_PER_PAGE:
+                    do_chunks.append(
+                        (
+                            current_normal_chunk_cols,
+                            current_normal_chunk_dos,
+                        )
+                    )
+                    current_normal_chunk_cols = []
+                    current_normal_chunk_dos = []
+
+        if current_normal_chunk_cols:
+            do_chunks.append(
+                (current_normal_chunk_cols, current_normal_chunk_dos)
+            )
+
+        # --- สร้าง Worksheet แต่ละกลุ่ม DO ---
+        for chunk_idx, (current_cols, do_nums) in enumerate(do_chunks):
             num_dos = len(do_nums)
 
-            # --- แก้ไขจุดที่ 2: ตัดเลนส์ที่ไม่มีการสั่งซื้อ (ยอดสั่งซื้อใน DO ชุดนี้เป็น 0) ออกทั้งหมด ---
+            # กรองและจัดเรียงเลนส์เฉพาะที่มีการสั่งซื้อใน DO ชุดนี้
             store_items_sorted = []
             for r_idx in range(item_start_row, item_end_row + 1):
                 qty_subset = [
                     parse_num(raw_df.iloc[r_idx, c]) for c in current_cols
                 ]
                 if sum(qty_subset) == 0:
-                    continue  # ข้ามเลนส์ที่ไม่มียอดสั่งซื้อทันที
+                    continue  # ตัดเลนส์ที่ไม่มีการสั่งซื้อออกเด็ดขาด
 
                 first_do_idx = next(
                     (i for i, q in enumerate(qty_subset) if q > 0), 999
@@ -390,7 +431,7 @@ def process_excel(uploaded_file):
 
             sheet_title = (
                 base_title
-                if num_do_chunks == 1
+                if len(do_chunks) == 1
                 else f"{base_title[:25]}_{chunk_idx+1}"
             )
             ws = wb_out.create_sheet(title=sheet_title)
@@ -417,7 +458,6 @@ def process_excel(uploaded_file):
                 else 1
             )
 
-            # เก็บตำแหน่งบรรทัดเริ่มต้นข้อมูลของแต่ละหน้าเพื่อคำนวณ Grand Total รวมหน้าสุดท้าย
             all_page_start_rows = []
             all_page_end_rows = []
 
@@ -430,7 +470,7 @@ def process_excel(uploaded_file):
                 )
                 chunk_items = store_items_sorted[start_item:end_item]
 
-                # --- 1. ส่วน Header ประจำหน้า ---
+                # --- 1. Header ประจำหน้า ---
                 ws.cell(
                     row=curr_row, column=1, value=f"Store ID: {store_id}"
                 ).font = Font(name="Cordia New", size=11, bold=True)
@@ -464,7 +504,7 @@ def process_excel(uploaded_file):
                 max_col_idx = 4 + num_dos
                 curr_row += 1
 
-                # --- 2. ส่วนข้อมูลสินค้า ---
+                # --- 2. ข้อมูลสินค้า ---
                 start_data_row = curr_row
                 for item in chunk_items:
                     ws.cell(
@@ -502,7 +542,7 @@ def process_excel(uploaded_file):
                     all_page_start_rows.append(start_data_row)
                     all_page_end_rows.append(end_data_row)
 
-                # --- แก้ไขจุดที่ 1: แสดง Grand Total เฉพาะหน้าสุดท้ายเท่านั้น ---
+                # --- 3. Grand Total เฉพาะหน้าสุดท้ายของกลุ่มนั้นๆ ---
                 if is_last_page:
                     ws.cell(
                         row=curr_row, column=1, value="Grand Total"
@@ -516,7 +556,6 @@ def process_excel(uploaded_file):
                         col_letter = get_column_letter(col_idx)
 
                         if all_page_start_rows:
-                            # รวมสูตร SUM ทุกช่วงข้อมูลตั้งแต่หน้าแรกจนถึงหน้าสุดท้าย
                             sum_parts = [
                                 f"{col_letter}{s}:{col_letter}{e}"
                                 for s, e in zip(
@@ -539,7 +578,6 @@ def process_excel(uploaded_file):
                         cell.fill = HEADER_FILL
                         cell.border = header_border
                 else:
-                    # ถ้าไม่ใช่หน้าสุดท้าย ใส่จุดแบ่งหน้า (Page Break)
                     ws.row_breaks.append(
                         openpyxl.worksheet.pagebreak.Break(id=curr_row - 1)
                     )
@@ -552,7 +590,7 @@ def process_excel(uploaded_file):
             for idx_q in range(num_dos):
                 ws.column_dimensions[
                     get_column_letter(5 + idx_q)
-                ].width = 14
+                ].width = 13
 
     for sheet in wb_out.worksheets:
         sheet.sheet_view.tabSelected = True
@@ -582,7 +620,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อเริ่มจัดกลุ่มตามสาขา<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อเริ่มจัดกลุ่มตามสาขา (จัดสูงสุด 8 DO/หน้า & แยก DO ใหญ่ >30 แถวให้อัตโนมัติ)<br>
         3. ดาวน์โหลดไฟล์ Excel พร้อมนำไปใช้งานได้ทันที
     </div>
 """,

@@ -239,6 +239,7 @@ def process_excel(uploaded_file):
 
     fill_green = PatternFill(start_color="E2EFDA", fill_type="solid")
     fill_peach = PatternFill(start_color="FCE4D6", fill_type="solid")
+    fill_yellow = PatternFill(start_color="FFF2CC", fill_type="solid")
 
     # --------------------------------------------------------------------------
     # Tab 1: Summary All Stores
@@ -257,7 +258,6 @@ def process_excel(uploaded_file):
         horizontal="center", vertical="center"
     )
 
-    # คำอธิบายสัญลักษณ์สี Sheet (Color Legend - ปรับปรุงข้อความและเกณฑ์ 35 แถว)
     ws_summary.cell(
         row=1, column=7, value="🟢 Tab สีเขียว:"
     ).font = Font(name="Cordia New", size=11, bold=True)
@@ -360,7 +360,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["H"].width = 48
 
     # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา (เกณฑ์ใหม่: >35 แถว หรือ >8 DO เป็น Tab สีแดง)
+    # 3. คัดแยกประเภทสาขา + เรียงลำดับสาขาตามจำนวน DO จากน้อยไปมาก
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -376,16 +376,20 @@ def process_excel(uploaded_file):
         )
 
         if active_items_count > 35 or num_dos > 8:
-            priority_stores.append((store_id, group, True))
+            priority_stores.append((store_id, group, True, num_dos))
         else:
-            normal_stores.append((store_id, group, False))
+            normal_stores.append((store_id, group, False, num_dos))
 
-    sorted_store_groups = priority_stores + normal_stores
+    # เรียงลำดับภายในกลุ่มตามจำนวน DO จากน้อยไปมาก (num_dos)
+    priority_stores_sorted = sorted(priority_stores, key=lambda x: x[3])
+    normal_stores_sorted = sorted(normal_stores, key=lambda x: x[3])
+
+    sorted_store_groups = priority_stores_sorted + normal_stores_sorted
 
     # --------------------------------------------------------------------------
     # 4. สร้าง Sheet รายสาขา
     # --------------------------------------------------------------------------
-    for store_id, group, is_heavy in sorted_store_groups:
+    for store_id, group, is_heavy, _ in sorted_store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
             if pd.notna(group["store_name"].iloc[0])
@@ -400,12 +404,12 @@ def process_excel(uploaded_file):
         heavy_dos_info = []
 
         for c_idx, do_n in zip(store_cols_all, do_nums_all):
-            do_item_count = sum(
+            do_active_rows = sum(
                 1
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            if do_item_count > 35:
+            if do_active_rows > 35:
                 heavy_dos_info.append((c_idx, do_n))
             else:
                 normal_dos_info.append((c_idx, do_n))
@@ -430,6 +434,7 @@ def process_excel(uploaded_file):
 
         curr_row = 1
         total_chunks = len(do_chunks)
+        global_do_counter = 1  # ตัวนับลำดับ DO 1, 2, 3...
 
         for chunk_idx, chunk_dos in enumerate(do_chunks):
             chunk_do_nums = [x[1] for x in chunk_dos]
@@ -497,6 +502,28 @@ def process_excel(uploaded_file):
             ).font = Font(name="Cordia New", size=11, bold=True)
             curr_row += 1
 
+            # ------------------------------------------------------------------
+            # เขียนแถวลำดับ DO (1, 2, 3...) ไฮไลท์สีเหลือง
+            # ------------------------------------------------------------------
+            for idx_q in range(chunk_num_dos):
+                c_i = 5 + idx_q
+                cell_seq = ws.cell(
+                    row=curr_row, column=c_i, value=global_do_counter + idx_q
+                )
+                cell_seq.font = Font(
+                    name="Cordia New", size=11, bold=True, color="000000"
+                )
+                cell_seq.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+                cell_seq.fill = fill_yellow
+                cell_seq.border = header_border
+
+            curr_row += 1
+
+            # ------------------------------------------------------------------
+            # เขียน Header ตารางปกติ
+            # ------------------------------------------------------------------
             base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
             for col_i, h_text in enumerate(base_headers, 1):
                 cell = ws.cell(row=curr_row, column=col_i, value=h_text)
@@ -519,6 +546,7 @@ def process_excel(uploaded_file):
                 )
                 cell.border = header_border
 
+            global_do_counter += chunk_num_dos
             max_col_idx = 4 + chunk_num_dos
             curr_row += 1
             start_data_row = curr_row
@@ -628,7 +656,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ Sheet + แบ่งหน้าพิมพ์ 35 แถวและ 8 DO<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อเรียงลำดับ Sheet ตามจำนวน DO และรันลำดับเลข DO ไฮไลท์สีเหลือง<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -643,7 +671,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และปรับแต่งระยะจัดพิมพ์..."):
+        with st.spinner("⏳ กำลังจัดลำดับ Sheet และรันลำดับเลข DO..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
@@ -659,4 +687,3 @@ if uploaded_file is not None:
                 st.error(
                     f"❌ เกิดข้อผิดพลาดในการประมวลผล โปรดตรวจสอบโครงสร้างไฟล์: {e}"
                 )
-

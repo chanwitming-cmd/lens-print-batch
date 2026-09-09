@@ -272,7 +272,6 @@ def process_excel(uploaded_file, lang_code="TH"):
                 ):
                     col_mapping["name"] = c
                 elif "sph" in val:
-                    col_mapping["sph"] = val and c or c
                     col_mapping["sph"] = c
                 elif "cyl" in val:
                     col_mapping["cyl"] = c
@@ -299,7 +298,6 @@ def process_excel(uploaded_file, lang_code="TH"):
     first_store_col = max(col_mapping.values()) + 1
     total_cols = raw_df.shape[1]
 
-    # ตรวจสอบว่ามี Store ID อยู่ในแถวเหนือนั้นจริงหรือไม่ (ต้องไม่ใช่คำว่า 'do' หรือค่าว่าง)
     has_upper_store_info = False
     if header_row_idx >= 2:
         top_row_vals = [
@@ -325,10 +323,11 @@ def process_excel(uploaded_file, lang_code="TH"):
         if has_upper_store_info:
             st_id = raw_df.iloc[header_row_idx - 2, c_idx]
             st_name = raw_df.iloc[header_row_idx - 1, c_idx]
-            st_id_str = str(st_id).strip() if pd.notna(st_id) and str(st_id).strip().lower() != "do" else "STORE_1"
+            if pd.isna(st_id) or str(st_id).strip() == "" or str(st_id).strip().lower() in ["nan", "do"]:
+                continue
+            st_id_str = str(st_id).strip()
             st_name_str = str(st_name).strip() if pd.notna(st_name) else st_id_str
         else:
-            # กรณีไฟล์ไม่มี Store ID ด้านบน (เช่น test2.xlsx) ให้ใช้ชื่อไฟล์เป็นชื่อสาขา และรหัสสาขามาตรฐาน
             st_id_str = "STORE_01"
             st_name_str = default_store_name
 
@@ -417,18 +416,23 @@ def process_excel(uploaded_file, lang_code="TH"):
     summary_preview_data = []
 
     for store_id, group in store_groups:
-        store_name = (
-            str(group["store_name"].iloc[0])
-            if pd.notna(group["store_name"].iloc[0])
-            else str(store_id)
-        )
-        num_dos = len(group)
         st_cols = group["col_idx"].tolist()
         total_pcs = sum(
             int(parse_num(raw_df.iloc[r, c]))
             for r in range(item_start_row, item_end_row + 1)
             for c in st_cols
         )
+
+        # ข้ามสาขาที่ไม่มีเลนส์เลย (0 ชิ้น) เพื่อไม่ให้มีแถวขยะ
+        if total_pcs == 0:
+            continue
+
+        store_name = (
+            str(group["store_name"].iloc[0])
+            if pd.notna(group["store_name"].iloc[0])
+            else str(store_id)
+        )
+        num_dos = len(group)
 
         active_items_count = sum(
             1
@@ -501,7 +505,19 @@ def process_excel(uploaded_file, lang_code="TH"):
     priority_stores = []
     normal_stores = []
 
+    # กรองเฉพาะกลุ่มสาขาที่มีสินค้าจริง
+    valid_store_groups = []
     for store_id, group in store_groups:
+        st_cols = group["col_idx"].tolist()
+        total_pcs = sum(
+            int(parse_num(raw_df.iloc[r, c]))
+            for r in range(item_start_row, item_end_row + 1)
+            for c in st_cols
+        )
+        if total_pcs > 0:
+            valid_store_groups.append((store_id, group))
+
+    for store_id, group in valid_store_groups:
         st_cols = group["col_idx"].tolist()
         num_dos = len(st_cols)
         active_items_count = sum(
@@ -774,9 +790,9 @@ def process_excel(uploaded_file, lang_code="TH"):
     output.seek(0)
 
     stats = {
-        "total_stores": len(store_groups),
-        "heavy_stores": len(priority_stores),
-        "normal_stores": len(normal_stores),
+        "total_stores": len(summary_preview_data),
+        "heavy_stores": sum(1 for x in summary_preview_data if "Heavy" in x["Status"] or "พิมพ์แยก" in x["Status"]),
+        "normal_stores": sum(1 for x in summary_preview_data if "Normal" in x["Status"] or "พิมพ์รวม" in x["Status"]),
         "total_pcs": sum(item["Total Pcs"] for item in summary_preview_data),
         "preview_df": pd.DataFrame(summary_preview_data),
         "single_files": single_store_files,
@@ -916,10 +932,12 @@ else:
 
     if filter_status == t["filter_normal"]:
         filtered_df = filtered_df[
-            filtered_df["Status"].str.contains("Normal")
+            filtered_df["Status"].str.contains("Normal|พิมพ์รวม")
         ]
     elif filter_status == t["filter_heavy"]:
-        filtered_df = filtered_df[filtered_df["Status"].str.contains("Heavy")]
+        filtered_df = filtered_df[
+            filtered_df["Status"].str.contains("Heavy|พิมพ์แยก")
+        ]
 
     st.dataframe(filtered_df, use_container_width=True)
 

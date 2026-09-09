@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
 
 # ==============================================================================
-# 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
+# 1. ตั้งค่าและตกแต่งด้วย CSS
 # ==============================================================================
 st.set_page_config(
     page_title="Optics Lens Dispatcher System",
@@ -107,7 +107,7 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. คลังข้อความสองภาษา (Translations Dictionary)
+# 2. คลังข้อความสองภาษา
 # ==============================================================================
 TEXTS = {
     "TH": {
@@ -287,11 +287,7 @@ def process_excel(uploaded_file, lang_code="TH"):
             f"Invalid header format. Missing columns: {', '.join(missing_cols)}"
         )
 
-    store_id_row = max(0, header_row_idx - 2)
-    store_name_row = max(0, header_row_idx - 1)
-    do_number_row = header_row_idx
     item_start_row = header_row_idx + 1
-
     item_end_row = len(raw_df) - 1
     for r in range(item_start_row, len(raw_df)):
         first_val = str(raw_df.iloc[r, 0]).strip().lower()
@@ -302,34 +298,45 @@ def process_excel(uploaded_file, lang_code="TH"):
     first_store_col = max(col_mapping.values()) + 1
     total_cols = raw_df.shape[1]
 
+    # ตรวจสอบว่ามี Store ID / Store Name อยู่แถวด้านบนจริงหรือไม่
+    has_upper_store_info = False
+    if header_row_idx >= 2:
+        top_row_vals = [
+            str(raw_df.iloc[header_row_idx - 2, c]).strip().lower()
+            for c in range(first_store_col, total_cols)
+            if pd.notna(raw_df.iloc[header_row_idx - 2, c])
+        ]
+        # ถ้าไม่มีคำว่า 'do' หรือมีรหัสสาขาจริง
+        if any(v != "do" and v != "nan" and v != "" for v in top_row_vals):
+            has_upper_store_info = True
+
+    default_store_name = uploaded_file.name.replace(".xlsx", "").replace(".XLSX", "")
+
     store_cols_data = []
     for c_idx in range(first_store_col, total_cols):
-        st_id = raw_df.iloc[store_id_row, c_idx]
-        st_name = raw_df.iloc[store_name_row, c_idx]
-        do_num = raw_df.iloc[do_number_row, c_idx]
+        do_val = raw_df.iloc[header_row_idx, c_idx]
+        if pd.isna(do_val) or "total" in str(do_val).lower():
+            continue
 
-        # ดึงรหัสสาขาเฉพาะคอลัมน์ที่มีข้อมูลอยู่จริงเท่านั้น (ป้องกัน STORE_1 โผล่)
-        if pd.notna(st_id) and pd.notna(do_num):
-            st_id_str = str(st_id).strip()
-            do_num_str = str(do_num).strip()
+        do_num_str = str(do_val).strip()
 
-            if (
-                st_id_str != ""
-                and st_id_str.lower() != "nan"
-                and "total" not in st_id_str.lower()
-            ):
-                store_cols_data.append(
-                    {
-                        "col_idx": c_idx,
-                        "store_id": st_id_str,
-                        "store_name": (
-                            str(st_name).strip()
-                            if pd.notna(st_name)
-                            else st_id_str
-                        ),
-                        "do_number": do_num_str,
-                    }
-                )
+        if has_upper_store_info:
+            st_id = raw_df.iloc[header_row_idx - 2, c_idx]
+            st_name = raw_df.iloc[header_row_idx - 1, c_idx]
+            st_id_str = str(st_id).strip() if pd.notna(st_id) else "MAIN"
+            st_name_str = str(st_name).strip() if pd.notna(st_name) else st_id_str
+        else:
+            st_id_str = "00001"
+            st_name_str = default_store_name
+
+        store_cols_data.append(
+            {
+                "col_idx": c_idx,
+                "store_id": st_id_str,
+                "store_name": st_name_str,
+                "do_number": do_num_str,
+            }
+        )
 
     stores_df = pd.DataFrame(store_cols_data)
 

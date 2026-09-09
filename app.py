@@ -108,7 +108,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 2. ฟังก์ชันประมวลผล Excel
+# 2. ฟังก์ชันประมวลผล Excel (รองรับชื่อคอลัมน์หลายรูปแบบ)
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -150,22 +150,48 @@ def process_excel(uploaded_file):
     header_row_idx = None
     col_mapping = {}
 
-    for r in range(min(10, len(raw_df))):
+    # วนลูปค้นหาบรรทัด Header ที่ยืดหยุ่นขึ้น
+    for r in range(min(15, len(raw_df))):
         row_vals = [
             str(v).strip().lower() if pd.notna(v) else "" for v in raw_df.iloc[r]
         ]
-        if "item pid" in row_vals:
+
+        # ตรวจหา PID
+        pid_col = None
+        for c, val in enumerate(row_vals):
+            if any(k in val for k in ["item pid", "pids", "pid", "code"]):
+                pid_col = c
+                break
+
+        # ตรวจหา SPH & CYL
+        has_sph = any("sph" in val for val in row_vals)
+        has_cyl = any("cyl" in val for val in row_vals)
+
+        if pid_col is not None and (has_sph or has_cyl):
             header_row_idx = r
+            col_mapping["pid"] = pid_col
+
             for c, val in enumerate(row_vals):
-                if "item pid" in val:
-                    col_mapping["pid"] = c
-                elif "item name" in val:
+                if any(
+                    k in val
+                    for k in [
+                        "item name",
+                        "lk type package",
+                        "package",
+                        "name",
+                        "desc",
+                    ]
+                ) and c != pid_col:
                     col_mapping["name"] = c
                 elif "sph" in val:
                     col_mapping["sph"] = c
                 elif "cyl" in val:
                     col_mapping["cyl"] = c
             break
+
+    # ถ้าไม่พบคอลัมน์ Name ให้ใช้คอลัมน์ถัดจาก PID เป็น Name โดยอัตโนมัติ
+    if "pid" in col_mapping and "name" not in col_mapping:
+        col_mapping["name"] = col_mapping["pid"] + 1
 
     required_cols = ["pid", "name", "sph", "cyl"]
     missing_cols = [c for c in required_cols if c not in col_mapping]
@@ -174,8 +200,9 @@ def process_excel(uploaded_file):
             f"รูปแบบหัวตารางไม่ถูกต้อง ไม่พบคอลัมน์: {', '.join(missing_cols)}"
         )
 
-    store_id_row = header_row_idx - 2
-    store_name_row = header_row_idx - 1
+    # เช็คระดับแถวของ Store ID, Store Name และ DO Number
+    store_id_row = max(0, header_row_idx - 2)
+    store_name_row = max(0, header_row_idx - 1)
     do_number_row = header_row_idx
     item_start_row = header_row_idx + 1
 
@@ -195,19 +222,23 @@ def process_excel(uploaded_file):
         st_name = raw_df.iloc[store_name_row, c_idx]
         do_num = raw_df.iloc[do_number_row, c_idx]
 
-        if pd.notna(st_id) and "total" not in str(st_id).strip().lower():
-            store_cols_data.append(
-                {
-                    "col_idx": c_idx,
-                    "store_id": str(st_id).strip(),
-                    "store_name": (
-                        str(st_name).strip() if pd.notna(st_name) else ""
-                    ),
-                    "do_number": (
-                        str(do_num).strip() if pd.notna(do_num) else ""
-                    ),
-                }
-            )
+        # กรณีไฟล์ไม่มี Store ID ชัดเจน ให้ใช้คำว่า Main Store หรือดึงจาก DO
+        val_str = str(do_num if pd.notna(do_num) else st_id).strip()
+
+        if pd.notna(do_num) or pd.notna(st_id):
+            if "total" not in val_str.lower() and val_str != "nan" and val_str != "":
+                final_st_id = str(st_id).strip() if pd.notna(st_id) and "total" not in str(st_id).lower() else "STORE_1"
+                final_st_name = str(st_name).strip() if pd.notna(st_name) else final_st_id
+                final_do_num = str(do_num).strip() if pd.notna(do_num) else f"DO-{c_idx}"
+
+                store_cols_data.append(
+                    {
+                        "col_idx": c_idx,
+                        "store_id": final_st_id,
+                        "store_name": final_st_name,
+                        "do_number": final_do_num,
+                    }
+                )
 
     stores_df = pd.DataFrame(store_cols_data)
 
@@ -657,11 +688,9 @@ def process_excel(uploaded_file):
 # 3. ส่วนการจัดวางหน้าตาเว็บ (Dynamic Responsive Layout)
 # ==============================================================================
 
-# สร้าง Session State สำหรับเก็บผลลัพธ์เพื่อไม่ให้หน้าจอกระพริบหลุดสถานะ
 if "processed_results" not in st.session_state:
     st.session_state["processed_results"] = None
 
-# ถ้ายังไม่มีการประมวลผล ให้บีบกรอบจัดองค์ประกอบไว้กลางจอพอดี
 if st.session_state["processed_results"] is None:
     _, center_col, _ = st.columns([1, 2.2, 1])
 
@@ -714,7 +743,6 @@ if st.session_state["processed_results"] is None:
                     st.session_state["processed_results"] = processed_results
                     st.rerun()
 
-# เมื่อประมวลผลเสร็จแล้ว ให้แสดง Dashboard แบบเต็มหน้าจอ (Wide)
 else:
     processed_results = st.session_state["processed_results"]
 
@@ -730,11 +758,9 @@ else:
 
     st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
 
-    # ดึงข้อมูลภาพรวมมาแสดง
     _, _, first_stats = processed_results[0]
     df_preview = first_stats["preview_df"]
 
-    # --- Dashboard Metrics ---
     st.markdown("### 📊 ภาพรวมการจัดส่ง (Interactive Dashboard)")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("สาขาทั้งหมด", f"{first_stats['total_stores']} สาขา")
@@ -744,7 +770,6 @@ else:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- Filter & Search Section ---
     col_search, col_filter = st.columns([2, 1])
     search_query = col_search.text_input(
         "🔍 ค้นหาสาขา (รหัสสาขา หรือ ชื่อสาขา):", ""
@@ -773,7 +798,6 @@ else:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # --- Export Section ---
     col_download, col_single = st.columns([1, 1])
 
     with col_download:

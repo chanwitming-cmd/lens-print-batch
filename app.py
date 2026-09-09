@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
 
 # ==============================================================================
-# 1. ตั้งค่าและตกแต่งด้วย CSS
+# 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
 # ==============================================================================
 st.set_page_config(
     page_title="Optics Lens Dispatcher System",
@@ -39,7 +39,7 @@ custom_css = """
         border-radius: 20px;
         color: #1E293B;
         text-align: center;
-        margin-bottom: 25px;
+        margin-bottom: 20px;
         box-shadow: 0 10px 25px rgba(148, 163, 184, 0.35),
                     inset 0 2px 3px rgba(255, 255, 255, 0.8);
         border: 1px solid rgba(255, 255, 255, 0.6);
@@ -106,9 +106,96 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
+# ==============================================================================
+# 2. คลังข้อความสองภาษา (Translations Dictionary)
+# ==============================================================================
+TEXTS = {
+    "TH": {
+        "title": "👓 Optics Lens Dispatcher System",
+        "subtitle": "ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ",
+        "uploader_label": "ลากไฟล์ Excel ต้นฉบับ (.xlsx) มาวางที่นี่ (รองรับหลายไฟล์พร้อมกัน)",
+        "btn_process": "🚀 ประมวลผลและแปลงไฟล์ทั้งหมด",
+        "guide_title": "📖 คำแนะนำและวิธีการใช้งานระบบ",
+        "guide_content": """
+            **🔹 ขั้นตอนการทำงาน:**
+            1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน (สามารถเลือกพร้อมกันได้หลายไฟล์)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO และตั้งค่าจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
+            
+            <hr style="margin: 10px 0;">
+            
+            **💡 สัญลักษณ์สีในไฟล์ Excel:**
+            * 🟢 **Tab สีเขียว (Normal):** สั่งกด Print รวมทั้งไฟล์ได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)
+            * 🔴 **Tab สีแดง (Heavy):** ต้องเปิดเข้าไปสั่ง Print แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)
+        """,
+        "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
+        "dashboard_title": "📊 ภาพรวมการจัดส่ง (Interactive Dashboard)",
+        "m_total_stores": "สาขาทั้งหมด",
+        "m_heavy_stores": "🔴 พิมพ์แยก (Heavy)",
+        "m_normal_stores": "🟢 พิมพ์รวม (Normal)",
+        "m_total_pcs": "ยอดเลนส์รวม",
+        "search_label": "🔍 ค้นหาสาขา (รหัสสาขา หรือ ชื่อสาขา):",
+        "filter_label": "📌 กรองตามสถานะ:",
+        "filter_all": "ทั้งหมด (All)",
+        "filter_normal": "🟢 พิมพ์รวม (Normal)",
+        "filter_heavy": "🔴 พิมพ์แยก (Heavy)",
+        "main_export": "📦 ดาวน์โหลดชุดไฟล์หลัก",
+        "single_export": "🚨 ดาวน์โหลดฉุกเฉินเฉพาะสาขา",
+        "btn_download_excel": "📥 ดาวน์โหลดไฟล์ Excel สรุปผล",
+        "btn_download_zip": "📦 ดาวน์โหลดไฟล์ทั้งหมดเป็น ZIP",
+        "select_single": "เลือกสาขาที่ต้องการดาวน์โหลดไฟล์เดี่ยว:",
+        "btn_single": "📄 ดาวน์โหลด Excel เฉพาะสาขา",
+        "btn_reset": "🔄 อัปโหลดไฟล์ชุดใหม่",
+        "unit_store": "สาขา",
+        "unit_pcs": "ชิ้น",
+        "status_normal": "🟢 พิมพ์รวม (Normal)",
+        "status_heavy": "🔴 พิมพ์แยก (Heavy)",
+    },
+    "EN": {
+        "title": "👓 Optics Lens Dispatcher System",
+        "subtitle": "Automated Lens Dispatching, Sorting, and Print-Ready Processing System",
+        "uploader_label": "Drag and drop original Excel files (.xlsx) here (Supports multiple files)",
+        "btn_process": "🚀 Process & Convert All Files",
+        "guide_title": "📖 System User Guide",
+        "guide_content": """
+            **🔹 Workflow Steps:**
+            1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above (batch upload supported).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, and format print pages.
+            3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
+            
+            <hr style="margin: 10px 0;">
+            
+            **💡 Sheet Color Indicators in Excel:**
+            * 🟢 **Green Tabs (Normal):** Print entire workbook at once (≤ 8 DOs AND ≤ 35 rows).
+            * 🔴 **Red Tabs (Heavy):** Must print each sheet individually (> 8 DOs OR > 35 rows).
+        """,
+        "success": "✅ **Processing Completed Successfully!**",
+        "dashboard_title": "📊 Dispatch Summary (Interactive Dashboard)",
+        "m_total_stores": "Total Stores",
+        "m_heavy_stores": "🔴 Separate Print (Heavy)",
+        "m_normal_stores": "🟢 Batch Print (Normal)",
+        "m_total_pcs": "Total Lenses",
+        "search_label": "🔍 Search Store (Store ID or Store Name):",
+        "filter_label": "📌 Filter by Status:",
+        "filter_all": "All Stores",
+        "filter_normal": "🟢 Batch Print (Normal)",
+        "filter_heavy": "🔴 Separate Print (Heavy)",
+        "main_export": "📦 Download Main Package",
+        "single_export": "🚨 Quick Single Store Download",
+        "btn_download_excel": "📥 Download Summary Excel File",
+        "btn_download_zip": "📦 Download All Files as ZIP",
+        "select_single": "Select specific store to download:",
+        "btn_single": "📄 Download Store File",
+        "btn_reset": "🔄 Upload New Files",
+        "unit_store": "Stores",
+        "unit_pcs": "Pcs",
+        "status_normal": "🟢 Batch Print (Normal)",
+        "status_heavy": "🔴 Separate Print (Heavy)",
+    },
+}
 
 # ==============================================================================
-# 2. ฟังก์ชันประมวลผล Excel (รองรับชื่อคอลัมน์หลายรูปแบบ)
+# 3. ฟังก์ชันประมวลผล Excel
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -141,7 +228,8 @@ def setup_sheet_page_layout(ws, is_heavy=False):
         ws.page_setup.fitToHeight = 1
 
 
-def process_excel(uploaded_file):
+def process_excel(uploaded_file, lang_code="TH"):
+    t = TEXTS[lang_code]
     wb_raw = openpyxl.load_workbook(uploaded_file)
     ws_raw = wb_raw.active
     raw_data = [list(row) for row in ws_raw.iter_rows(values_only=True)]
@@ -150,20 +238,17 @@ def process_excel(uploaded_file):
     header_row_idx = None
     col_mapping = {}
 
-    # วนลูปค้นหาบรรทัด Header ที่ยืดหยุ่นขึ้น
     for r in range(min(15, len(raw_df))):
         row_vals = [
             str(v).strip().lower() if pd.notna(v) else "" for v in raw_df.iloc[r]
         ]
 
-        # ตรวจหา PID
         pid_col = None
         for c, val in enumerate(row_vals):
             if any(k in val for k in ["item pid", "pids", "pid", "code"]):
                 pid_col = c
                 break
 
-        # ตรวจหา SPH & CYL
         has_sph = any("sph" in val for val in row_vals)
         has_cyl = any("cyl" in val for val in row_vals)
 
@@ -172,16 +257,19 @@ def process_excel(uploaded_file):
             col_mapping["pid"] = pid_col
 
             for c, val in enumerate(row_vals):
-                if any(
-                    k in val
-                    for k in [
-                        "item name",
-                        "lk type package",
-                        "package",
-                        "name",
-                        "desc",
-                    ]
-                ) and c != pid_col:
+                if (
+                    any(
+                        k in val
+                        for k in [
+                            "item name",
+                            "lk type package",
+                            "package",
+                            "name",
+                            "desc",
+                        ]
+                    )
+                    and c != pid_col
+                ):
                     col_mapping["name"] = c
                 elif "sph" in val:
                     col_mapping["sph"] = c
@@ -189,7 +277,6 @@ def process_excel(uploaded_file):
                     col_mapping["cyl"] = c
             break
 
-    # ถ้าไม่พบคอลัมน์ Name ให้ใช้คอลัมน์ถัดจาก PID เป็น Name โดยอัตโนมัติ
     if "pid" in col_mapping and "name" not in col_mapping:
         col_mapping["name"] = col_mapping["pid"] + 1
 
@@ -197,10 +284,9 @@ def process_excel(uploaded_file):
     missing_cols = [c for c in required_cols if c not in col_mapping]
     if header_row_idx is None or len(missing_cols) > 0:
         raise ValueError(
-            f"รูปแบบหัวตารางไม่ถูกต้อง ไม่พบคอลัมน์: {', '.join(missing_cols)}"
+            f"Invalid header format. Missing columns: {', '.join(missing_cols)}"
         )
 
-    # เช็คระดับแถวของ Store ID, Store Name และ DO Number
     store_id_row = max(0, header_row_idx - 2)
     store_name_row = max(0, header_row_idx - 1)
     do_number_row = header_row_idx
@@ -222,14 +308,21 @@ def process_excel(uploaded_file):
         st_name = raw_df.iloc[store_name_row, c_idx]
         do_num = raw_df.iloc[do_number_row, c_idx]
 
-        # กรณีไฟล์ไม่มี Store ID ชัดเจน ให้ใช้คำว่า Main Store หรือดึงจาก DO
         val_str = str(do_num if pd.notna(do_num) else st_id).strip()
 
         if pd.notna(do_num) or pd.notna(st_id):
             if "total" not in val_str.lower() and val_str != "nan" and val_str != "":
-                final_st_id = str(st_id).strip() if pd.notna(st_id) and "total" not in str(st_id).lower() else "STORE_1"
-                final_st_name = str(st_name).strip() if pd.notna(st_name) else final_st_id
-                final_do_num = str(do_num).strip() if pd.notna(do_num) else f"DO-{c_idx}"
+                final_st_id = (
+                    str(st_id).strip()
+                    if pd.notna(st_id) and "total" not in str(st_id).lower()
+                    else "STORE_1"
+                )
+                final_st_name = (
+                    str(st_name).strip() if pd.notna(st_name) else final_st_id
+                )
+                final_do_num = (
+                    str(do_num).strip() if pd.notna(do_num) else f"DO-{c_idx}"
+                )
 
                 store_cols_data.append(
                     {
@@ -266,30 +359,30 @@ def process_excel(uploaded_file):
     setup_sheet_page_layout(ws_summary, is_heavy=False)
 
     ws_summary.merge_cells("A1:E1")
-    ws_summary["A1"] = (
-        "สรุปรายการจัดส่งเลนส์ประจำรอบ (Store Dispatch Summary)"
-    )
+    ws_summary["A1"] = "สรุปรายการจัดส่งเลนส์ประจำรอบ (Store Dispatch Summary)"
     ws_summary["A1"].font = Font(
         name="Cordia New", size=18, bold=True, color="000000"
     )
-    ws_summary["A1"].alignment = Alignment(
-        horizontal="center", vertical="center"
-    )
+    ws_summary["A1"].alignment = Alignment(horizontal="center", vertical="center")
 
-    ws_summary.cell(
-        row=1, column=7, value="🟢 Tab สีเขียว:"
-    ).font = Font(name="Cordia New", size=11, bold=True)
+    ws_summary.cell(row=1, column=7, value="🟢 Tab สีเขียว:").font = Font(
+        name="Cordia New", size=11, bold=True
+    )
     cell_lg_g = ws_summary.cell(
-        row=1, column=8, value="สั่งพิมพ์รวมได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)"
+        row=1,
+        column=8,
+        value="สั่งพิมพ์รวมได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)",
     )
     cell_lg_g.font = Font(name="Cordia New", size=11)
     cell_lg_g.fill = fill_green
 
-    ws_summary.cell(
-        row=2, column=7, value="🔴 Tab สีแดง:"
-    ).font = Font(name="Cordia New", size=11, bold=True)
+    ws_summary.cell(row=2, column=7, value="🔴 Tab สีแดง:").font = Font(
+        name="Cordia New", size=11, bold=True
+    )
     cell_lg_r = ws_summary.cell(
-        row=2, column=8, value="ต้องสั่งพิมพ์แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)"
+        row=2,
+        column=8,
+        value="ต้องสั่งพิมพ์แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)",
     )
     cell_lg_r.font = Font(name="Cordia New", size=11)
     cell_lg_r.fill = fill_peach
@@ -337,16 +430,16 @@ def process_excel(uploaded_file):
         ws_summary.cell(row=row_idx, column=1, value=idx).alignment = Alignment(
             horizontal="center"
         )
-        ws_summary.cell(row=row_idx, column=2, value=store_id).alignment = (
-            Alignment(horizontal="center")
+        ws_summary.cell(row=row_idx, column=2, value=store_id).alignment = Alignment(
+            horizontal="center"
         )
         ws_summary.cell(row=row_idx, column=3, value=store_name)
-        ws_summary.cell(
-            row=row_idx, column=4, value=num_dos
-        ).alignment = Alignment(horizontal="right")
-        ws_summary.cell(
-            row=row_idx, column=5, value=total_pcs
-        ).alignment = Alignment(horizontal="right")
+        ws_summary.cell(row=row_idx, column=4, value=num_dos).alignment = Alignment(
+            horizontal="right"
+        )
+        ws_summary.cell(row=row_idx, column=5, value=total_pcs).alignment = (
+            Alignment(horizontal="right")
+        )
 
         for c in range(1, 6):
             cell = ws_summary.cell(row=row_idx, column=c)
@@ -359,9 +452,7 @@ def process_excel(uploaded_file):
                 "Store Name": store_name,
                 "DO Count": num_dos,
                 "Total Pcs": total_pcs,
-                "Status": (
-                    "🔴 พิมพ์แยก (Heavy)" if is_heavy else "🟢 พิมพ์รวม (Normal)"
-                ),
+                "Status": t["status_heavy"] if is_heavy else t["status_normal"],
             }
         )
 
@@ -685,34 +776,51 @@ def process_excel(uploaded_file):
 
 
 # ==============================================================================
-# 3. ส่วนการจัดวางหน้าตาเว็บ (Dynamic Responsive Layout)
+# 4. ส่วนจัดวางหน้าตาเว็บ (Multi-language Layout)
 # ==============================================================================
+
+# ปุ่มสลับภาษาบนมุมขวา
+col_space, col_lang = st.columns([5, 1])
+with col_lang:
+    selected_lang = st.selectbox(
+        "🌐 Language / ภาษา",
+        ["🇹🇭 ไทย", "🇬🇧 English"],
+        index=0,
+        label_visibility="collapsed",
+    )
+
+lang_code = "TH" if "ไทย" in selected_lang else "EN"
+t = TEXTS[lang_code]
 
 if "processed_results" not in st.session_state:
     st.session_state["processed_results"] = None
 
+# ช่วงเวลาอัปโหลดไฟล์ (บีบจัดกึ่งกลางจอ)
 if st.session_state["processed_results"] is None:
     _, center_col, _ = st.columns([1, 2.2, 1])
 
     with center_col:
         st.markdown(
-            """
+            f"""
             <div class="header-box">
-                <div class="header-title">👓 Optics Lens Dispatcher System</div>
-                <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ</div>
+                <div class="header-title">{t['title']}</div>
+                <div class="header-subtitle">{t['subtitle']}</div>
             </div>
         """,
             unsafe_allow_html=True,
         )
 
         uploaded_files = st.file_uploader(
-            "ลากไฟล์ Excel ต้นฉบับ (.xlsx) มาวางที่นี่ (รองรับหลายไฟล์พร้อมกัน)",
+            t["uploader_label"],
             type=["xlsx"],
             accept_multiple_files=True,
         )
 
+        with st.expander(t["guide_title"]):
+            st.markdown(t["guide_content"], unsafe_allow_html=True)
+
         if uploaded_files:
-            if st.button("🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"):
+            if st.button(t["btn_process"]):
                 processed_results = []
                 errors = []
 
@@ -721,10 +829,12 @@ if st.session_state["processed_results"] is None:
 
                 for i, file in enumerate(uploaded_files):
                     status_text.text(
-                        f"⏳ กำลังประมวลผลไฟล์ ({i+1}/{len(uploaded_files)}): {file.name}"
+                        f"⏳ Processing ({i+1}/{len(uploaded_files)}): {file.name}"
                     )
                     try:
-                        out_bytes, stats = process_excel(file)
+                        out_bytes, stats = process_excel(
+                            file, lang_code=lang_code
+                        )
                         processed_results.append((file.name, out_bytes, stats))
                     except Exception as e:
                         errors.append((file.name, str(e)))
@@ -735,48 +845,56 @@ if st.session_state["processed_results"] is None:
 
                 if errors:
                     for err_file, err_msg in errors:
-                        st.error(
-                            f"❌ **พบข้อผิดพลาดในไฟล์ `{err_file}`:** {err_msg}"
-                        )
+                        st.error(f"❌ `{err_file}`: {err_msg}")
 
                 if processed_results:
                     st.session_state["processed_results"] = processed_results
                     st.rerun()
 
+# ช่วงเวลารายงานผล (ขยายเต็มหน้าจอ Wide Screen)
 else:
     processed_results = st.session_state["processed_results"]
 
     st.markdown(
-        """
+        f"""
         <div class="header-box">
-            <div class="header-title">👓 Optics Lens Dispatcher System</div>
-            <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ</div>
+            <div class="header-title">{t['title']}</div>
+            <div class="header-subtitle">{t['subtitle']}</div>
         </div>
     """,
         unsafe_allow_html=True,
     )
 
-    st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
+    st.success(t["success"])
 
     _, _, first_stats = processed_results[0]
     df_preview = first_stats["preview_df"]
 
-    st.markdown("### 📊 ภาพรวมการจัดส่ง (Interactive Dashboard)")
+    st.markdown(f"### {t['dashboard_title']}")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("สาขาทั้งหมด", f"{first_stats['total_stores']} สาขา")
-    m2.metric("🔴 พิมพ์แยก (Heavy)", f"{first_stats['heavy_stores']} สาขา")
-    m3.metric("🟢 พิมพ์รวม (Normal)", f"{first_stats['normal_stores']} สาขา")
-    m4.metric("ยอดเลนส์รวม", f"{first_stats['total_pcs']:,} ชิ้น")
+    m1.metric(
+        t["m_total_stores"],
+        f"{first_stats['total_stores']} {t['unit_store']}",
+    )
+    m2.metric(
+        t["m_heavy_stores"],
+        f"{first_stats['heavy_stores']} {t['unit_store']}",
+    )
+    m3.metric(
+        t["m_normal_stores"],
+        f"{first_stats['normal_stores']} {t['unit_store']}",
+    )
+    m4.metric(
+        t["m_total_pcs"], f"{first_stats['total_pcs']:,} {t['unit_pcs']}"
+    )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     col_search, col_filter = st.columns([2, 1])
-    search_query = col_search.text_input(
-        "🔍 ค้นหาสาขา (รหัสสาขา หรือ ชื่อสาขา):", ""
-    )
+    search_query = col_search.text_input(t["search_label"], "")
     filter_status = col_filter.selectbox(
-        "📌 กรองตามสถานะ:",
-        ["ทั้งหมด (All)", "🟢 พิมพ์รวม (Normal)", "🔴 พิมพ์แยก (Heavy)"],
+        t["filter_label"],
+        [t["filter_all"], t["filter_normal"], t["filter_heavy"]],
     )
 
     filtered_df = df_preview.copy()
@@ -789,9 +907,11 @@ else:
             )
         ]
 
-    if filter_status == "🟢 พิมพ์รวม (Normal)":
-        filtered_df = filtered_df[filtered_df["Status"].str.contains("Normal")]
-    elif filter_status == "🔴 พิมพ์แยก (Heavy)":
+    if filter_status == t["filter_normal"]:
+        filtered_df = filtered_df[
+            filtered_df["Status"].str.contains("Normal")
+        ]
+    elif filter_status == t["filter_heavy"]:
         filtered_df = filtered_df[filtered_df["Status"].str.contains("Heavy")]
 
     st.dataframe(filtered_df, use_container_width=True)
@@ -801,12 +921,12 @@ else:
     col_download, col_single = st.columns([1, 1])
 
     with col_download:
-        st.markdown("#### 📦 ดาวน์โหลดชุดไฟล์หลัก")
+        st.markdown(f"#### {t['main_export']}")
         if len(processed_results) == 1:
             fname, fbytes, _ = processed_results[0]
             out_name = f"Consolidated_{fname}"
             st.download_button(
-                label=f"📥 ดาวน์โหลดไฟล์ Excel สรุปผล ({out_name})",
+                label=f"{t['btn_download_excel']} ({out_name})",
                 data=fbytes,
                 file_name=out_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -823,27 +943,27 @@ else:
 
             zip_buffer.seek(0)
             st.download_button(
-                label="📦 ดาวน์โหลดไฟล์ทั้งหมดเป็น ZIP",
+                label=t["btn_download_zip"],
                 data=zip_buffer,
                 file_name="All_Consolidated_Lists.zip",
                 mime="application/zip",
             )
 
     with col_single:
-        st.markdown("#### 🚨 ดาวน์โหลดฉุกเฉินเฉพาะสาขา")
+        st.markdown(f"#### {t['single_export']}")
         selected_store_key = st.selectbox(
-            "เลือกสาขาที่ต้องการดาวน์โหลดไฟล์เดี่ยว:",
+            t["select_single"],
             options=list(first_stats["single_files"].keys()),
         )
         if selected_store_key:
             st.download_button(
-                label=f"📄 ดาวน์โหลด Excel เฉพาะสาขา ({selected_store_key})",
+                label=f"{t['btn_single']} ({selected_store_key})",
                 data=first_stats["single_files"][selected_store_key],
                 file_name=f"Dispatch_{selected_store_key}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 อัปโหลดไฟล์ชุดใหม่"):
+    if st.button(t["btn_reset"]):
         st.session_state["processed_results"] = None
         st.rerun()

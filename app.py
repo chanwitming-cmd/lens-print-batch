@@ -1,5 +1,6 @@
 import io
 import math
+import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -11,7 +12,7 @@ from openpyxl.worksheet.pagebreak import Break
 # 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
 # ==============================================================================
 st.set_page_config(
-    page_title="Optics Lens Dispatcher System",
+    page_title="Optics Lens Dispatcher System Pro",
     page_icon="👓",
     layout="centered",
 )
@@ -123,7 +124,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 2. ฟังก์ชันประมวลผล Excel
+# 2. ฟังก์ชันประมวลผล Excel และจัดโครงสร้าง
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -152,7 +153,6 @@ def setup_sheet_page_layout(ws, is_heavy=False):
     ws.print_options.verticalCentered = False
 
     if not is_heavy:
-        # สาขาปกติ บังคับ Fit to 1 page
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 1
@@ -183,6 +183,14 @@ def process_excel(uploaded_file):
                 elif "cyl" in val:
                     col_mapping["cyl"] = c
             break
+
+    # ตรวจสอบความถูกต้องของคอลัมน์ในไฟล์ (Validation)
+    required_cols = ["pid", "name", "sph", "cyl"]
+    missing_cols = [c for c in required_cols if c not in col_mapping]
+    if header_row_idx is None or len(missing_cols) > 0:
+        raise ValueError(
+            f"รูปแบบหัวตารางไม่ถูกต้อง ไม่พบคอลัมน์: {', '.join(missing_cols)}"
+        )
 
     store_id_row = header_row_idx - 2
     store_name_row = header_row_idx - 1
@@ -292,6 +300,8 @@ def process_excel(uploaded_file):
 
     row_idx = 4
     idx = 1
+    summary_preview_data = []
+
     for store_id, group in store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
@@ -324,6 +334,16 @@ def process_excel(uploaded_file):
             cell = ws_summary.cell(row=row_idx, column=c)
             cell.font = Font(name="Cordia New", size=12)
             cell.border = box_border
+
+        summary_preview_data.append(
+            {
+                "Store ID": store_id,
+                "Store Name": store_name,
+                "DO Count": num_dos,
+                "Total Pcs": total_pcs,
+            }
+        )
+
         row_idx += 1
         idx += 1
 
@@ -359,7 +379,7 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["H"].width = 48
 
     # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา + เรียงลำดับสาขาตามจำนวน DO จากน้อยไปมาก
+    # 3. คัดแยกประเภทสาขา + เรียงลำดับสาขาตามจำนวน DO
     # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
@@ -368,7 +388,6 @@ def process_excel(uploaded_file):
         st_cols = group["col_idx"].tolist()
         num_dos = len(st_cols)
 
-        # คำนวณจำนวนแถวตารางสินค้าเฉพาะของสาขานี้จริง
         active_items_count = sum(
             1
             for r in range(item_start_row, item_end_row + 1)
@@ -399,7 +418,6 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        # คำนวณจำนวนรายการของแต่ละ DO
         dos_with_counts = []
         for c_idx, do_n in zip(store_cols_all, do_nums_all):
             cnt = sum(
@@ -409,7 +427,6 @@ def process_excel(uploaded_file):
             )
             dos_with_counts.append((c_idx, do_n, cnt))
 
-        # เรียงลำดับ DO จากรายการน้อยไปมาก (DO หนัก/เยอะที่สุดจะไปอยู่คอลัมน์ท้ายสุด)
         dos_sorted_by_count = sorted(dos_with_counts, key=lambda x: x[2])
         ordered_dos = [(x[0], x[1]) for x in dos_sorted_by_count]
 
@@ -426,9 +443,9 @@ def process_excel(uploaded_file):
         setup_sheet_page_layout(ws, is_heavy=is_heavy)
 
         if is_heavy:
-            ws.sheet_properties.tabColor = "FCE4D6"  # สีส้ม/แดงอ่อนพาสเทล
+            ws.sheet_properties.tabColor = "FCE4D6"
         else:
-            ws.sheet_properties.tabColor = "E2EFDA"  # สีเขียวอ่อนพาสเทล
+            ws.sheet_properties.tabColor = "E2EFDA"
 
         curr_row = 1
         total_chunks = len(do_chunks)
@@ -500,9 +517,6 @@ def process_excel(uploaded_file):
             ).font = Font(name="Cordia New", size=11, bold=True)
             curr_row += 1
 
-            # ------------------------------------------------------------------
-            # แถวรันลำดับ DO (1, 2, 3...) แบบไม่มีสีไฮไลท์
-            # ------------------------------------------------------------------
             for idx_q in range(chunk_num_dos):
                 c_i = 5 + idx_q
                 cell_seq = ws.cell(
@@ -518,9 +532,6 @@ def process_excel(uploaded_file):
 
             curr_row += 1
 
-            # ------------------------------------------------------------------
-            # Header ตารางปกติ
-            # ------------------------------------------------------------------
             base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
             for col_i, h_text in enumerate(base_headers, 1):
                 cell = ws.cell(row=curr_row, column=col_i, value=h_text)
@@ -631,18 +642,28 @@ def process_excel(uploaded_file):
     output = io.BytesIO()
     wb_out.save(output)
     output.seek(0)
-    return output
+
+    # ส่งคืนข้อมูลเพิ่มเติมสำหรับทำ Dashboard สรุปผล
+    stats = {
+        "total_stores": len(store_groups),
+        "heavy_stores": len(priority_stores),
+        "normal_stores": len(normal_stores),
+        "total_pcs": sum(item["Total Pcs"] for item in summary_preview_data),
+        "preview_df": pd.DataFrame(summary_preview_data),
+    }
+
+    return output, stats
 
 
 # ==============================================================================
-# 3. ส่วนการจัดวางหน้าตาเว็บ (UI Layout)
+# 3. ส่วนการจัดวางหน้าตาเว็บ (UI Layout & Dashboard)
 # ==============================================================================
 st.markdown(
     """
     <div class="header-box">
         <div class="header-icon">👓</div>
-        <div class="header-title">Optics Lens Dispatcher System</div>
-        <div class="header-subtitle">ระบบจัดกลุ่มและสรุปรายการจัดส่งเลนส์แยกสาขาอัตโนมัติ</div>
+        <div class="header-title">Optics Lens Dispatcher System Pro</div>
+        <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ</div>
     </div>
 """,
     unsafe_allow_html=True,
@@ -652,35 +673,87 @@ st.markdown(
     """
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
-        1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ DO และจัดหน้าพิมพ์ให้อัตโนมัติ<br>
-        3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
+        1. อัปโหลดไฟล์ Excel (รองรับครั้งละหลายไฟล์พร้อมกัน)<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อตรวจสอบและจัดโครงสร้างตารางพิมพ์<br>
+        3. ตรวจสอบสถิติตัวอย่างบนเว็บ และดาวน์โหลดไฟล์สรุปผลได้ทันที
     </div>
 """,
     unsafe_allow_html=True,
 )
 
-uploaded_file = st.file_uploader(
-    "เลือกไฟล์ Excel ต้นฉบับ (.xlsx)", type=["xlsx"]
+uploaded_files = st.file_uploader(
+    "ลากไฟล์ Excel ต้นฉบับ (.xlsx) มาวางที่นี่ (อัปโหลดได้หลายไฟล์)",
+    type=["xlsx"],
+    accept_multiple_files=True,
 )
 
-if uploaded_file is not None:
-    st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
+if uploaded_files:
+    st.info(f"📁 **จำนวนไฟล์ที่เลือก:** `{len(uploaded_files)} ไฟล์`")
 
-    if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ DO และปรับตั้งค่าการพิมพ์..."):
+    if st.button("🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"):
+        processed_results = []
+        errors = []
+
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        for i, file in enumerate(uploaded_files):
+            status_text.text(f"⏳ กำลังประมวลผลไฟล์ ({i+1}/{len(uploaded_files)}): {file.name}")
             try:
-                processed_data = process_excel(uploaded_file)
-                st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
-                st.markdown("<br>", unsafe_allow_html=True)
+                out_bytes, stats = process_excel(file)
+                processed_results.append((file.name, out_bytes, stats))
+            except Exception as e:
+                errors.append((file.name, str(e)))
 
+            progress_bar.progress((i + 1) / len(uploaded_files))
+
+        status_text.empty()
+
+        if errors:
+            for err_file, err_msg in errors:
+                st.error(f"❌ **พบข้อผิดพลาดในไฟล์ `{err_file}`:** {err_msg}")
+
+        if processed_results:
+            st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # แสดง Dashboard สรุปผลจากไฟล์แรก หรือภาพรวม
+            first_filename, _, first_stats = processed_results[0]
+
+            st.markdown("### 📊 ภาพรวมการจัดส่ง (Dashboard Summary)")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("สาขาทั้งหมด", f"{first_stats['total_stores']} สาขา")
+            col2.metric("🔴 พิมพ์แยก (Heavy)", f"{first_stats['heavy_stores']} สาขา")
+            col3.metric("🟢 พิมพ์รวม (Normal)", f"{first_stats['normal_stores']} สาขา")
+            col4.metric("ยอดเลนส์รวม", f"{first_stats['total_pcs']:,} ชิ้น")
+
+            with st.expander("🔍 ดูตารางสรุปรายสาขาก่อนดาวน์โหลด"):
+                st.dataframe(first_stats["preview_df"], use_container_width=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # การจัดการดาวน์โหลด (ไฟล์เดียว vs หลายไฟล์ ZIP)
+            if len(processed_results) == 1:
+                fname, fbytes, _ = processed_results[0]
+                out_name = f"Consolidated_{fname}"
                 st.download_button(
-                    label="📥 ดาวน์โหลดไฟล์ Excel สรุปผล (Consolidated Lists)",
-                    data=processed_data,
-                    file_name="Consolidated_Picking_Lists_Grouped.xlsx",
+                    label=f"📥 ดาวน์โหลดไฟล์ Excel สรุปผล ({out_name})",
+                    data=fbytes,
+                    file_name=out_name,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-            except Exception as e:
-                st.error(
-                    f"❌ เกิดข้อผิดพลาดในการประมวลผล โปรดตรวจสอบโครงสร้างไฟล์: {e}"
+            else:
+                # สร้าง ZIP รวมไฟล์ทั้งหมดเมื่อมีการอัปโหลดหลายไฟล์
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                    for fname, fbytes, _ in processed_results:
+                        zip_file.writestr(f"Consolidated_{fname}", fbytes.getvalue())
+
+                zip_buffer.seek(0)
+                st.download_button(
+                    label="📦 ดาวน์โหลดไฟล์ทั้งหมดเป็น ZIP (All_Consolidated_Lists.zip)",
+                    data=zip_buffer,
+                    file_name="All_Consolidated_Lists.zip",
+                    mime="application/zip",
                 )
+

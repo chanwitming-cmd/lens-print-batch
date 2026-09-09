@@ -9,10 +9,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
 
 # ==============================================================================
-# 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
+# 1. ตั้งค่าและตกแต่งด้วย CSS
 # ==============================================================================
 st.set_page_config(
-    page_title="Optics Lens Dispatcher System Pro Max",
+    page_title="Optics Lens Dispatcher System",
     page_icon="👓",
     layout="wide",
 )
@@ -55,17 +55,6 @@ custom_css = """
     .header-subtitle {
         font-size: 14px;
         color: #64748B;
-    }
-
-    .step-box {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 25px;
-        color: #334155;
-        box-shadow: 0 4px 15px rgba(148, 163, 184, 0.2);
-        border: 1px solid #FFFFFF;
     }
 
     [data-testid="stFileUploader"] {
@@ -119,7 +108,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 2. ฟังก์ชันประมวลผล Excel และจัดโครงสร้าง
+# 2. ฟังก์ชันประมวลผล Excel
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -241,9 +230,7 @@ def process_excel(uploaded_file):
     fill_green = PatternFill(start_color="E2EFDA", fill_type="solid")
     fill_peach = PatternFill(start_color="FCE4D6", fill_type="solid")
 
-    # --------------------------------------------------------------------------
     # Tab 1: Summary All Stores
-    # --------------------------------------------------------------------------
     ws_summary = wb_out.create_sheet(title="Summary All Stores")
     setup_sheet_page_layout(ws_summary, is_heavy=False)
 
@@ -379,9 +366,6 @@ def process_excel(uploaded_file):
     ws_summary.column_dimensions["D"].width = 16
     ws_summary.column_dimensions["E"].width = 22
 
-    # --------------------------------------------------------------------------
-    # 3. คัดแยกประเภทสาขา + เรียงลำดับสาขาตามจำนวน DO
-    # --------------------------------------------------------------------------
     priority_stores = []
     normal_stores = []
 
@@ -405,9 +389,6 @@ def process_excel(uploaded_file):
 
     single_store_files = {}
 
-    # --------------------------------------------------------------------------
-    # 4. สร้าง Sheet รายสาขา
-    # --------------------------------------------------------------------------
     for store_id, group, is_heavy, _ in sorted_store_groups:
         store_name = (
             str(group["store_name"].iloc[0])
@@ -637,7 +618,6 @@ def process_excel(uploaded_file):
         for idx_q in range(min(8, num_dos)):
             ws.column_dimensions[get_column_letter(5 + idx_q)].width = 13
 
-        # สร้างไฟล์เดี่ยวแยกเฉพาะสาขาสำหรับกรณีฉุกเฉิน
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)
         ws_single = wb_single.create_sheet(title=sheet_title)
@@ -674,147 +654,172 @@ def process_excel(uploaded_file):
 
 
 # ==============================================================================
-# 3. ส่วนการจัดวางหน้าตาเว็บ (UI Layout & Interactive Dashboard)
+# 3. ส่วนการจัดวางหน้าตาเว็บ (Dynamic Responsive Layout)
 # ==============================================================================
-st.markdown(
-    """
-    <div class="header-box">
-        <div class="header-title">👓 Optics Lens Dispatcher System Pro Max</div>
-        <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ (Enterprise Edition)</div>
-    </div>
-""",
-    unsafe_allow_html=True,
-)
 
-uploaded_files = st.file_uploader(
-    "ลากไฟล์ Excel ต้นฉบับ (.xlsx) มาวางที่นี่ (รองรับหลายไฟล์พร้อมกัน)",
-    type=["xlsx"],
-    accept_multiple_files=True,
-)
+# สร้าง Session State สำหรับเก็บผลลัพธ์เพื่อไม่ให้หน้าจอกระพริบหลุดสถานะ
+if "processed_results" not in st.session_state:
+    st.session_state["processed_results"] = None
 
-if uploaded_files:
-    if st.button("🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"):
-        processed_results = []
-        errors = []
+# ถ้ายังไม่มีการประมวลผล ให้บีบกรอบจัดองค์ประกอบไว้กลางจอพอดี
+if st.session_state["processed_results"] is None:
+    _, center_col, _ = st.columns([1, 2.2, 1])
 
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+    with center_col:
+        st.markdown(
+            """
+            <div class="header-box">
+                <div class="header-title">👓 Optics Lens Dispatcher System</div>
+                <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ</div>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
 
-        for i, file in enumerate(uploaded_files):
-            status_text.text(
-                f"⏳ กำลังประมวลผลไฟล์ ({i+1}/{len(uploaded_files)}): {file.name}"
-            )
-            try:
-                out_bytes, stats = process_excel(file)
-                processed_results.append((file.name, out_bytes, stats))
-            except Exception as e:
-                errors.append((file.name, str(e)))
+        uploaded_files = st.file_uploader(
+            "ลากไฟล์ Excel ต้นฉบับ (.xlsx) มาวางที่นี่ (รองรับหลายไฟล์พร้อมกัน)",
+            type=["xlsx"],
+            accept_multiple_files=True,
+        )
 
-            progress_bar.progress((i + 1) / len(uploaded_files))
+        if uploaded_files:
+            if st.button("🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"):
+                processed_results = []
+                errors = []
 
-        status_text.empty()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
-        if errors:
-            for err_file, err_msg in errors:
-                st.error(f"❌ **พบข้อผิดพลาดในไฟล์ `{err_file}`:** {err_msg}")
-
-        if processed_results:
-            st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
-
-            # ดึงข้อมูลภาพรวมมาแสดง
-            _, _, first_stats = processed_results[0]
-            df_preview = first_stats["preview_df"]
-
-            # --- Dashboard Metrics ---
-            st.markdown("### 📊 ภาพรวมการจัดส่ง (Interactive Dashboard)")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("สาขาทั้งหมด", f"{first_stats['total_stores']} สาขา")
-            m2.metric(
-                "🔴 พิมพ์แยก (Heavy)", f"{first_stats['heavy_stores']} สาขา"
-            )
-            m3.metric(
-                "🟢 พิมพ์รวม (Normal)", f"{first_stats['normal_stores']} สาขา"
-            )
-            m4.metric("ยอดเลนส์รวม", f"{first_stats['total_pcs']:,} ชิ้น")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # --- Filter & Search Section ---
-            col_search, col_filter = st.columns([2, 1])
-            search_query = col_search.text_input(
-                "🔍 ค้นหาสาขา (รหัสสาขา หรือ ชื่อสาขา):", ""
-            )
-            filter_status = col_filter.selectbox(
-                "📌 กรองตามสถานะ:",
-                ["ทั้งหมด (All)", "🟢 พิมพ์รวม (Normal)", "🔴 พิมพ์แยก (Heavy)"],
-            )
-
-            # กรองข้อมูลตามเงื่อนไข
-            filtered_df = df_preview.copy()
-            if search_query:
-                filtered_df = filtered_df[
-                    filtered_df["Store ID"]
-                    .str.contains(search_query, case=False, na=False)
-                    | filtered_df["Store Name"].str.contains(
-                        search_query, case=False, na=False
+                for i, file in enumerate(uploaded_files):
+                    status_text.text(
+                        f"⏳ กำลังประมวลผลไฟล์ ({i+1}/{len(uploaded_files)}): {file.name}"
                     )
-                ]
+                    try:
+                        out_bytes, stats = process_excel(file)
+                        processed_results.append((file.name, out_bytes, stats))
+                    except Exception as e:
+                        errors.append((file.name, str(e)))
 
-            if filter_status == "🟢 พิมพ์รวม (Normal)":
-                filtered_df = filtered_df[
-                    filtered_df["Status"].str.contains("Normal")
-                ]
-            elif filter_status == "🔴 พิมพ์แยก (Heavy)":
-                filtered_df = filtered_df[
-                    filtered_df["Status"].str.contains("Heavy")
-                ]
+                    progress_bar.progress((i + 1) / len(uploaded_files))
 
-            st.dataframe(filtered_df, use_container_width=True)
+                status_text.empty()
 
-            st.markdown("<hr>", unsafe_allow_html=True)
+                if errors:
+                    for err_file, err_msg in errors:
+                        st.error(
+                            f"❌ **พบข้อผิดพลาดในไฟล์ `{err_file}`:** {err_msg}"
+                        )
 
-            # --- Export Section ---
-            col_download, col_single = st.columns([1, 1])
+                if processed_results:
+                    st.session_state["processed_results"] = processed_results
+                    st.rerun()
 
-            with col_download:
-                st.markdown("#### 📦 ดาวน์โหลดชุดไฟล์หลัก")
-                if len(processed_results) == 1:
-                    fname, fbytes, _ = processed_results[0]
-                    out_name = f"Consolidated_{fname}"
-                    st.download_button(
-                        label=f"📥 ดาวน์โหลดไฟล์ Excel สรุปผล ({out_name})",
-                        data=fbytes,
-                        file_name=out_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+# เมื่อประมวลผลเสร็จแล้ว ให้แสดง Dashboard แบบเต็มหน้าจอ (Wide)
+else:
+    processed_results = st.session_state["processed_results"]
+
+    st.markdown(
+        """
+        <div class="header-box">
+            <div class="header-title">👓 Optics Lens Dispatcher System</div>
+            <div class="header-subtitle">ระบบจัดกลุ่ม จัดเรียง และเตรียมหน้าพิมพ์ใบจัดส่งเลนส์อัตโนมัติ</div>
+        </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")
+
+    # ดึงข้อมูลภาพรวมมาแสดง
+    _, _, first_stats = processed_results[0]
+    df_preview = first_stats["preview_df"]
+
+    # --- Dashboard Metrics ---
+    st.markdown("### 📊 ภาพรวมการจัดส่ง (Interactive Dashboard)")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("สาขาทั้งหมด", f"{first_stats['total_stores']} สาขา")
+    m2.metric("🔴 พิมพ์แยก (Heavy)", f"{first_stats['heavy_stores']} สาขา")
+    m3.metric("🟢 พิมพ์รวม (Normal)", f"{first_stats['normal_stores']} สาขา")
+    m4.metric("ยอดเลนส์รวม", f"{first_stats['total_pcs']:,} ชิ้น")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- Filter & Search Section ---
+    col_search, col_filter = st.columns([2, 1])
+    search_query = col_search.text_input(
+        "🔍 ค้นหาสาขา (รหัสสาขา หรือ ชื่อสาขา):", ""
+    )
+    filter_status = col_filter.selectbox(
+        "📌 กรองตามสถานะ:",
+        ["ทั้งหมด (All)", "🟢 พิมพ์รวม (Normal)", "🔴 พิมพ์แยก (Heavy)"],
+    )
+
+    filtered_df = df_preview.copy()
+    if search_query:
+        filtered_df = filtered_df[
+            filtered_df["Store ID"]
+            .str.contains(search_query, case=False, na=False)
+            | filtered_df["Store Name"].str.contains(
+                search_query, case=False, na=False
+            )
+        ]
+
+    if filter_status == "🟢 พิมพ์รวม (Normal)":
+        filtered_df = filtered_df[filtered_df["Status"].str.contains("Normal")]
+    elif filter_status == "🔴 พิมพ์แยก (Heavy)":
+        filtered_df = filtered_df[filtered_df["Status"].str.contains("Heavy")]
+
+    st.dataframe(filtered_df, use_container_width=True)
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+    # --- Export Section ---
+    col_download, col_single = st.columns([1, 1])
+
+    with col_download:
+        st.markdown("#### 📦 ดาวน์โหลดชุดไฟล์หลัก")
+        if len(processed_results) == 1:
+            fname, fbytes, _ = processed_results[0]
+            out_name = f"Consolidated_{fname}"
+            st.download_button(
+                label=f"📥 ดาวน์โหลดไฟล์ Excel สรุปผล ({out_name})",
+                data=fbytes,
+                file_name=out_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        else:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(
+                zip_buffer, "w", zipfile.ZIP_DEFLATED
+            ) as zip_file:
+                for fname, fbytes, _ in processed_results:
+                    zip_file.writestr(
+                        f"Consolidated_{fname}", fbytes.getvalue()
                     )
-                else:
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(
-                        zip_buffer, "w", zipfile.ZIP_DEFLATED
-                    ) as zip_file:
-                        for fname, fbytes, _ in processed_results:
-                            zip_file.writestr(
-                                f"Consolidated_{fname}", fbytes.getvalue()
-                            )
 
-                    zip_buffer.seek(0)
-                    st.download_button(
-                        label="📦 ดาวน์โหลดไฟล์ทั้งหมดเป็น ZIP",
-                        data=zip_buffer,
-                        file_name="All_Consolidated_Lists.zip",
-                        mime="application/zip",
-                    )
+            zip_buffer.seek(0)
+            st.download_button(
+                label="📦 ดาวน์โหลดไฟล์ทั้งหมดเป็น ZIP",
+                data=zip_buffer,
+                file_name="All_Consolidated_Lists.zip",
+                mime="application/zip",
+            )
 
-            with col_single:
-                st.markdown("#### 🚨 ดาวน์โหลดฉุกเฉินเฉพาะสาขา")
-                selected_store_key = st.selectbox(
-                    "เลือกสาขาที่ต้องการดาวน์โหลดไฟล์เดี่ยว:",
-                    options=list(first_stats["single_files"].keys()),
-                )
-                if selected_store_key:
-                    st.download_button(
-                        label=f"📄 ดาวน์โหลด Excel เฉพาะสาขา ({selected_store_key})",
-                        data=first_stats["single_files"][selected_store_key],
-                        file_name=f"Dispatch_{selected_store_key}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+    with col_single:
+        st.markdown("#### 🚨 ดาวน์โหลดฉุกเฉินเฉพาะสาขา")
+        selected_store_key = st.selectbox(
+            "เลือกสาขาที่ต้องการดาวน์โหลดไฟล์เดี่ยว:",
+            options=list(first_stats["single_files"].keys()),
+        )
+        if selected_store_key:
+            st.download_button(
+                label=f"📄 ดาวน์โหลด Excel เฉพาะสาขา ({selected_store_key})",
+                data=first_stats["single_files"][selected_store_key],
+                file_name=f"Dispatch_{selected_store_key}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 อัปโหลดไฟล์ชุดใหม่"):
+        st.session_state["processed_results"] = None
+        st.rerun()

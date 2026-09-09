@@ -239,7 +239,6 @@ def process_excel(uploaded_file):
 
     fill_green = PatternFill(start_color="E2EFDA", fill_type="solid")
     fill_peach = PatternFill(start_color="FCE4D6", fill_type="solid")
-    fill_yellow = PatternFill(start_color="FFF2CC", fill_type="solid")
 
     # --------------------------------------------------------------------------
     # Tab 1: Summary All Stores
@@ -369,6 +368,7 @@ def process_excel(uploaded_file):
         st_cols = group["col_idx"].tolist()
         num_dos = len(st_cols)
 
+        # คำนวณจำนวนแถวตารางสินค้าเฉพาะของสาขานี้จริง
         active_items_count = sum(
             1
             for r in range(item_start_row, item_end_row + 1)
@@ -380,7 +380,6 @@ def process_excel(uploaded_file):
         else:
             normal_stores.append((store_id, group, False, num_dos))
 
-    # เรียงลำดับภายในกลุ่มตามจำนวน DO จากน้อยไปมาก (num_dos)
     priority_stores_sorted = sorted(priority_stores, key=lambda x: x[3])
     normal_stores_sorted = sorted(normal_stores, key=lambda x: x[3])
 
@@ -400,21 +399,20 @@ def process_excel(uploaded_file):
         store_cols_all = group["col_idx"].tolist()
         do_nums_all = group["do_number"].tolist()
 
-        normal_dos_info = []
-        heavy_dos_info = []
-
+        # คำนวณจำนวนรายการของแต่ละ DO
+        dos_with_counts = []
         for c_idx, do_n in zip(store_cols_all, do_nums_all):
-            do_active_rows = sum(
+            cnt = sum(
                 1
                 for r in range(item_start_row, item_end_row + 1)
                 if parse_num(raw_df.iloc[r, c_idx]) > 0
             )
-            if do_active_rows > 35:
-                heavy_dos_info.append((c_idx, do_n))
-            else:
-                normal_dos_info.append((c_idx, do_n))
+            dos_with_counts.append((c_idx, do_n, cnt))
 
-        ordered_dos = normal_dos_info + heavy_dos_info
+        # เรียงลำดับ DO จากรายการน้อยไปมาก (DO หนัก/เยอะที่สุดจะไปอยู่คอลัมน์ท้ายสุด)
+        dos_sorted_by_count = sorted(dos_with_counts, key=lambda x: x[2])
+        ordered_dos = [(x[0], x[1]) for x in dos_sorted_by_count]
+
         ordered_do_nums = [x[1] for x in ordered_dos]
         num_dos = len(ordered_do_nums)
 
@@ -434,7 +432,7 @@ def process_excel(uploaded_file):
 
         curr_row = 1
         total_chunks = len(do_chunks)
-        global_do_counter = 1  # ตัวนับลำดับ DO 1, 2, 3...
+        global_do_counter = 1
 
         for chunk_idx, chunk_dos in enumerate(do_chunks):
             chunk_do_nums = [x[1] for x in chunk_dos]
@@ -503,7 +501,7 @@ def process_excel(uploaded_file):
             curr_row += 1
 
             # ------------------------------------------------------------------
-            # เขียนแถวลำดับ DO (1, 2, 3...) ไฮไลท์สีเหลือง
+            # แถวรันลำดับ DO (1, 2, 3...) แบบไม่มีสีไฮไลท์
             # ------------------------------------------------------------------
             for idx_q in range(chunk_num_dos):
                 c_i = 5 + idx_q
@@ -516,13 +514,12 @@ def process_excel(uploaded_file):
                 cell_seq.alignment = Alignment(
                     horizontal="center", vertical="center"
                 )
-                cell_seq.fill = fill_yellow
                 cell_seq.border = header_border
 
             curr_row += 1
 
             # ------------------------------------------------------------------
-            # เขียน Header ตารางปกติ
+            # Header ตารางปกติ
             # ------------------------------------------------------------------
             base_headers = ["Item PID", "Item Name", "SPH", "CYL"]
             for col_i, h_text in enumerate(base_headers, 1):
@@ -656,7 +653,7 @@ st.markdown(
     <div class="step-box">
         <b>🔹 ขั้นตอนการทำงาน:</b><br>
         1. อัปโหลดไฟล์ <code>TH_Consolidated_Sheet1.xlsx</code> ในช่องด้านล่าง<br>
-        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อเรียงลำดับ Sheet ตามจำนวน DO และรันลำดับเลข DO ไฮไลท์สีเหลือง<br>
+        2. กดปุ่ม <b>"ประมวลผลไฟล์"</b> เพื่อจัดลำดับ DO และจัดหน้าพิมพ์ให้อัตโนมัติ<br>
         3. ดาวน์โหลดไฟล์ Excel สรุปผล นำไปเปิดเลือกสั่งพิมพ์ได้ทันที
     </div>
 """,
@@ -671,7 +668,7 @@ if uploaded_file is not None:
     st.info(f"📄 **ไฟล์ที่เลือก:** `{uploaded_file.name}`")
 
     if st.button("🚀 ประมวลผลและแปลงไฟล์"):
-        with st.spinner("⏳ กำลังจัดลำดับ Sheet และรันลำดับเลข DO..."):
+        with st.spinner("⏳ กำลังจัดลำดับ DO และปรับตั้งค่าการพิมพ์..."):
             try:
                 processed_data = process_excel(uploaded_file)
                 st.success("✅ **ประมวลผลสำเร็จเรียบร้อย!**")

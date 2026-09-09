@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
 
 # ==============================================================================
-# 1. ตั้งค่าและตกแต่งด้วย CSS
+# 1. ตั้งค่าและตกแต่งด้วย CSS สไตล์ Soft 3D Light Theme
 # ==============================================================================
 st.set_page_config(
     page_title="Optics Lens Dispatcher System",
@@ -272,6 +272,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 ):
                     col_mapping["name"] = c
                 elif "sph" in val:
+                    col_mapping["sph"] = val and c or c
                     col_mapping["sph"] = c
                 elif "cyl" in val:
                     col_mapping["cyl"] = c
@@ -298,7 +299,7 @@ def process_excel(uploaded_file, lang_code="TH"):
     first_store_col = max(col_mapping.values()) + 1
     total_cols = raw_df.shape[1]
 
-    # ตรวจสอบว่ามี Store ID / Store Name อยู่แถวด้านบนจริงหรือไม่
+    # ตรวจสอบว่ามี Store ID อยู่ในแถวเหนือนั้นจริงหรือไม่ (ต้องไม่ใช่คำว่า 'do' หรือค่าว่าง)
     has_upper_store_info = False
     if header_row_idx >= 2:
         top_row_vals = [
@@ -306,8 +307,7 @@ def process_excel(uploaded_file, lang_code="TH"):
             for c in range(first_store_col, total_cols)
             if pd.notna(raw_df.iloc[header_row_idx - 2, c])
         ]
-        # ถ้าไม่มีคำว่า 'do' หรือมีรหัสสาขาจริง
-        if any(v != "do" and v != "nan" and v != "" for v in top_row_vals):
+        if top_row_vals and not all(v in ["do", "nan", ""] for v in top_row_vals):
             has_upper_store_info = True
 
     default_store_name = uploaded_file.name.replace(".xlsx", "").replace(".XLSX", "")
@@ -315,18 +315,21 @@ def process_excel(uploaded_file, lang_code="TH"):
     store_cols_data = []
     for c_idx in range(first_store_col, total_cols):
         do_val = raw_df.iloc[header_row_idx, c_idx]
-        if pd.isna(do_val) or "total" in str(do_val).lower():
+        if pd.isna(do_val):
             continue
 
         do_num_str = str(do_val).strip()
+        if do_num_str == "" or do_num_str.lower() == "nan" or "total" in do_num_str.lower():
+            continue
 
         if has_upper_store_info:
             st_id = raw_df.iloc[header_row_idx - 2, c_idx]
             st_name = raw_df.iloc[header_row_idx - 1, c_idx]
-            st_id_str = str(st_id).strip() if pd.notna(st_id) else "MAIN"
+            st_id_str = str(st_id).strip() if pd.notna(st_id) and str(st_id).strip().lower() != "do" else "STORE_1"
             st_name_str = str(st_name).strip() if pd.notna(st_name) else st_id_str
         else:
-            st_id_str = "00001"
+            # กรณีไฟล์ไม่มี Store ID ด้านบน (เช่น test2.xlsx) ให้ใช้ชื่อไฟล์เป็นชื่อสาขา และรหัสสาขามาตรฐาน
+            st_id_str = "STORE_01"
             st_name_str = default_store_name
 
         store_cols_data.append(

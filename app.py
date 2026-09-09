@@ -1,9 +1,9 @@
 import io
 import math
-import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
+import zipfile
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -308,28 +308,26 @@ def process_excel(uploaded_file, lang_code="TH"):
         st_name = raw_df.iloc[store_name_row, c_idx]
         do_num = raw_df.iloc[do_number_row, c_idx]
 
-        val_str = str(do_num if pd.notna(do_num) else st_id).strip()
+        # ดึงรหัสสาขาเฉพาะคอลัมน์ที่มีข้อมูลอยู่จริงเท่านั้น (ป้องกัน STORE_1 โผล่)
+        if pd.notna(st_id) and pd.notna(do_num):
+            st_id_str = str(st_id).strip()
+            do_num_str = str(do_num).strip()
 
-        if pd.notna(do_num) or pd.notna(st_id):
-            if "total" not in val_str.lower() and val_str != "nan" and val_str != "":
-                final_st_id = (
-                    str(st_id).strip()
-                    if pd.notna(st_id) and "total" not in str(st_id).lower()
-                    else "STORE_1"
-                )
-                final_st_name = (
-                    str(st_name).strip() if pd.notna(st_name) else final_st_id
-                )
-                final_do_num = (
-                    str(do_num).strip() if pd.notna(do_num) else f"DO-{c_idx}"
-                )
-
+            if (
+                st_id_str != ""
+                and st_id_str.lower() != "nan"
+                and "total" not in st_id_str.lower()
+            ):
                 store_cols_data.append(
                     {
                         "col_idx": c_idx,
-                        "store_id": final_st_id,
-                        "store_name": final_st_name,
-                        "do_number": final_do_num,
+                        "store_id": st_id_str,
+                        "store_name": (
+                            str(st_name).strip()
+                            if pd.notna(st_name)
+                            else st_id_str
+                        ),
+                        "do_number": do_num_str,
                     }
                 )
 
@@ -363,7 +361,9 @@ def process_excel(uploaded_file, lang_code="TH"):
     ws_summary["A1"].font = Font(
         name="Cordia New", size=18, bold=True, color="000000"
     )
-    ws_summary["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_summary["A1"].alignment = Alignment(
+        horizontal="center", vertical="center"
+    )
 
     ws_summary.cell(row=1, column=7, value="🟢 Tab สีเขียว:").font = Font(
         name="Cordia New", size=11, bold=True
@@ -430,16 +430,16 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws_summary.cell(row=row_idx, column=1, value=idx).alignment = Alignment(
             horizontal="center"
         )
-        ws_summary.cell(row=row_idx, column=2, value=store_id).alignment = Alignment(
-            horizontal="center"
-        )
+        ws_summary.cell(
+            row=row_idx, column=2, value=store_id
+        ).alignment = Alignment(horizontal="center")
         ws_summary.cell(row=row_idx, column=3, value=store_name)
-        ws_summary.cell(row=row_idx, column=4, value=num_dos).alignment = Alignment(
-            horizontal="right"
-        )
-        ws_summary.cell(row=row_idx, column=5, value=total_pcs).alignment = (
-            Alignment(horizontal="right")
-        )
+        ws_summary.cell(
+            row=row_idx, column=4, value=num_dos
+        ).alignment = Alignment(horizontal="right")
+        ws_summary.cell(
+            row=row_idx, column=5, value=total_pcs
+        ).alignment = Alignment(horizontal="right")
 
         for c in range(1, 6):
             cell = ws_summary.cell(row=row_idx, column=c)
@@ -779,7 +779,6 @@ def process_excel(uploaded_file, lang_code="TH"):
 # 4. ส่วนจัดวางหน้าตาเว็บ (Multi-language Layout)
 # ==============================================================================
 
-# ปุ่มสลับภาษาบนมุมขวา
 col_space, col_lang = st.columns([5, 1])
 with col_lang:
     selected_lang = st.selectbox(
@@ -795,7 +794,6 @@ t = TEXTS[lang_code]
 if "processed_results" not in st.session_state:
     st.session_state["processed_results"] = None
 
-# ช่วงเวลาอัปโหลดไฟล์ (บีบจัดกึ่งกลางจอ)
 if st.session_state["processed_results"] is None:
     _, center_col, _ = st.columns([1, 2.2, 1])
 
@@ -851,7 +849,6 @@ if st.session_state["processed_results"] is None:
                     st.session_state["processed_results"] = processed_results
                     st.rerun()
 
-# ช่วงเวลารายงานผล (ขยายเต็มหน้าจอ Wide Screen)
 else:
     processed_results = st.session_state["processed_results"]
 

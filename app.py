@@ -1,9 +1,10 @@
 import io
 import math
+import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
-import zipfile
+from PIL import Image, ImageDraw, ImageFont
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -118,15 +119,9 @@ TEXTS = {
         "guide_title": "📖 คำแนะนำและวิธีการใช้งานระบบ",
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
-            1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน (สามารถเลือกพร้อมกันได้หลายไฟล์)
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO และตั้งค่าจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ด และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
-            
-            <hr style="margin: 10px 0;">
-            
-            **💡 สัญลักษณ์สีในไฟล์ Excel:**
-            * 🟢 **Tab สีเขียว (Normal):** สั่งกด Print รวมทั้งไฟล์ได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)
-            * 🔴 **Tab สีแดง (Heavy):** ต้องเปิดเข้าไปสั่ง Print แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
         "dashboard_title": "📊 ภาพรวมการจัดส่ง (Interactive Dashboard)",
@@ -159,15 +154,9 @@ TEXTS = {
         "guide_title": "📖 System User Guide",
         "guide_content": """
             **🔹 Workflow Steps:**
-            1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above (batch upload supported).
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, and format print pages.
+            1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes, and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
-            
-            <hr style="margin: 10px 0;">
-            
-            **💡 Sheet Color Indicators in Excel:**
-            * 🟢 **Green Tabs (Normal):** Print entire workbook at once (≤ 8 DOs AND ≤ 35 rows).
-            * 🔴 **Red Tabs (Heavy):** Must print each sheet individually (> 8 DOs OR > 35 rows).
         """,
         "success": "✅ **Processing Completed Successfully!**",
         "dashboard_title": "📊 Dispatch Summary (Interactive Dashboard)",
@@ -195,7 +184,31 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันประมวลผล Excel
+# 3. ฟังก์ชันสร้างภาพ Barcode จากเลข DO
+# ==============================================================================
+def generate_barcode_image(do_text):
+    # สร้างภาพบาร์โค้ดจำลองความกว้าง 140x35 พิกเซล
+    img = Image.new("RGB", (140, 35), color="white")
+    draw = ImageDraw.Draw(img)
+    
+    # วาดลายเส้นบาร์โค้ดจำลองจากตัวอักษรของ DO
+    x = 10
+    for char in str(do_text):
+        code_val = ord(char)
+        bar_width = 2 if code_val % 2 == 0 else 1
+        space_width = 1
+        draw.rectangle([x, 5, x + bar_width, 25], fill="black")
+        x += bar_width + space_width
+        if x > 130:
+            break
+            
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+# ==============================================================================
+# 4. ฟังก์ชันประมวลผล Excel
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -423,7 +436,6 @@ def process_excel(uploaded_file, lang_code="TH"):
             for c in st_cols
         )
 
-        # ข้ามสาขาที่ไม่มีเลนส์เลย (0 ชิ้น) เพื่อไม่ให้มีแถวขยะ
         if total_pcs == 0:
             continue
 
@@ -505,7 +517,6 @@ def process_excel(uploaded_file, lang_code="TH"):
     priority_stores = []
     normal_stores = []
 
-    # กรองเฉพาะกลุ่มสาขาที่มีสินค้าจริง
     valid_store_groups = []
     for store_id, group in store_groups:
         st_cols = group["col_idx"].tolist()
@@ -684,9 +695,21 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
+            # --- เพิ่มแถว Barcode ใต้เลข DO ---
+            barcode_row_idx = curr_row + 1
+            ws.row_dimensions[barcode_row_idx].height = 30  # ขยายความสูงแถวบาร์โค้ด
+            for idx_q, do_n in enumerate(chunk_do_nums):
+                c_i = 5 + idx_q
+                bc_buf = generate_barcode_image(do_n)
+                img_obj = openpyxl.drawing.image.Image(bc_buf)
+                img_obj.width = 110
+                img_obj.height = 25
+                cell_coord = f"{get_column_letter(c_i)}{barcode_row_idx}"
+                ws.add_image(img_obj, cell_coord)
+
+            curr_row += 2  # ขยับข้ามแถว DO และแถว Barcode
             global_do_counter += chunk_num_dos
             max_col_idx = 4 + chunk_num_dos
-            curr_row += 1
             start_data_row = curr_row
 
             for row_data in chunk_items_list:
@@ -764,7 +787,7 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 13
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 16
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)
@@ -992,3 +1015,4 @@ else:
     if st.button(t["btn_reset"]):
         st.session_state["processed_results"] = None
         st.rerun()
+

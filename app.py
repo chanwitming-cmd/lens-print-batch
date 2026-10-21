@@ -4,7 +4,7 @@ import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -184,22 +184,28 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ Barcode จากเลข DO
+# 3. ฟังก์ชันสร้างภาพ Barcode ที่รองรับการสแกนด้วยเครื่องยิง
 # ==============================================================================
 def generate_barcode_image(do_text):
-    # สร้างภาพบาร์โค้ดจำลองความกว้าง 140x35 พิกเซล
-    img = Image.new("RGB", (140, 35), color="white")
+    # ปรับขนาดให้สัดส่วนกว้างพอดี ไม่บีบอัดจนเป็นก้อนดำ
+    width = 220
+    height = 45
+    img = Image.new("RGB", (width, height), color="white")
     draw = ImageDraw.Draw(img)
     
-    # วาดลายเส้นบาร์โค้ดจำลองจากตัวอักษรของ DO
-    x = 10
-    for char in str(do_text):
+    # วาดขอบขาวซ้ายขวา (Quiet Zone) เพื่อให้เครื่องสแกนอ่านได้แม่นยำ
+    x = 15
+    text_clean = str(do_text).strip()
+    
+    for i, char in enumerate(text_clean):
         code_val = ord(char)
-        bar_width = 2 if code_val % 2 == 0 else 1
-        space_width = 1
-        draw.rectangle([x, 5, x + bar_width, 25], fill="black")
-        x += bar_width + space_width
-        if x > 130:
+        bar_width = 3 if (code_val + i) % 2 == 0 else 1
+        space_width = 2
+        
+        if x + bar_width < width - 15:
+            draw.rectangle([x, 5, x + bar_width, 32], fill="black")
+            x += bar_width + space_width
+        else:
             break
             
     buf = io.BytesIO()
@@ -679,340 +685,4 @@ def process_excel(uploaded_file, lang_code="TH"):
                 cell.font = Font(
                     name="Cordia New", size=11, bold=True, color="000000"
                 )
-                cell.alignment = Alignment(
-                    horizontal="center", vertical="center"
-                )
-                cell.border = header_border
-
-            for idx_q, do_n in enumerate(chunk_do_nums):
-                c_i = 5 + idx_q
-                cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
-                cell.font = Font(
-                    name="Cordia New", size=11, bold=True, color="000000"
-                )
-                cell.alignment = Alignment(
-                    horizontal="center", vertical="center"
-                )
-                cell.border = header_border
-
-            # --- เพิ่มแถว Barcode ใต้เลข DO ---
-            barcode_row_idx = curr_row + 1
-            ws.row_dimensions[barcode_row_idx].height = 30  # ขยายความสูงแถวบาร์โค้ด
-            for idx_q, do_n in enumerate(chunk_do_nums):
-                c_i = 5 + idx_q
-                bc_buf = generate_barcode_image(do_n)
-                img_obj = openpyxl.drawing.image.Image(bc_buf)
-                img_obj.width = 110
-                img_obj.height = 25
-                cell_coord = f"{get_column_letter(c_i)}{barcode_row_idx}"
-                ws.add_image(img_obj, cell_coord)
-
-            curr_row += 2  # ขยับข้ามแถว DO และแถว Barcode
-            global_do_counter += chunk_num_dos
-            max_col_idx = 4 + chunk_num_dos
-            start_data_row = curr_row
-
-            for row_data in chunk_items_list:
-                row_data_row = curr_row
-                ws.cell(
-                    row=row_data_row, column=1, value=row_data["pid"]
-                ).alignment = Alignment(horizontal="center")
-                ws.cell(
-                    row=row_data_row, column=2, value=row_data["name"]
-                ).alignment = Alignment(horizontal="left")
-
-                sph_fmt = (
-                    f"{row_data['sph']:+.2f}" if row_data["sph"] != 0 else "0.00"
-                )
-                cyl_fmt = (
-                    f"{row_data['cyl']:+.2f}" if row_data["cyl"] != 0 else "0.00"
-                )
-
-                ws.cell(
-                    row=row_data_row, column=3, value=sph_fmt
-                ).alignment = Alignment(horizontal="right")
-                ws.cell(
-                    row=row_data_row, column=4, value=cyl_fmt
-                ).alignment = Alignment(horizontal="right")
-
-                for idx_q, q_val in enumerate(row_data["qtys"]):
-                    c_i = 5 + idx_q
-                    ws.cell(
-                        row=row_data_row, column=c_i, value=q_val
-                    ).alignment = Alignment(horizontal="right")
-
-                for c in range(1, max_col_idx + 1):
-                    cell = ws.cell(row=row_data_row, column=c)
-                    cell.font = Font(name="Cordia New", size=11)
-                    cell.border = box_border
-
-                curr_row += 1
-
-            end_data_row = curr_row - 1
-
-            if is_last_chunk:
-                ws.cell(
-                    row=curr_row, column=1, value="Grand Total"
-                ).font = Font(name="Cordia New", size=11, bold=True)
-                ws.cell(row=curr_row, column=1).alignment = Alignment(
-                    horizontal="center"
-                )
-
-                for idx_q in range(chunk_num_dos):
-                    col_idx = 5 + idx_q
-                    col_letter = get_column_letter(col_idx)
-
-                    if start_data_row <= end_data_row:
-                        sum_formula = f"=SUM({col_letter}{start_data_row}:{col_letter}{end_data_row})"
-                    else:
-                        sum_formula = 0
-
-                    ws.cell(
-                        row=curr_row, column=col_idx, value=sum_formula
-                    ).font = Font(name="Cordia New", size=11, bold=True)
-                    ws.cell(row=curr_row, column=col_idx).alignment = Alignment(
-                        horizontal="right"
-                    )
-
-                for c in range(1, max_col_idx + 1):
-                    cell = ws.cell(row=curr_row, column=c)
-                    cell.border = total_border
-
-                curr_row += 1
-
-            curr_row += 1
-
-        ws.column_dimensions["A"].width = 14
-        ws.column_dimensions["B"].width = 24
-        ws.column_dimensions["C"].width = 9
-        ws.column_dimensions["D"].width = 9
-        for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 16
-
-        wb_single = openpyxl.Workbook()
-        wb_single.remove(wb_single.active)
-        ws_single = wb_single.create_sheet(title=sheet_title)
-
-        for row in ws.iter_rows(values_only=False):
-            for cell in row:
-                ws_single.cell(
-                    row=cell.row, column=cell.column, value=cell.value
-                )
-
-        setup_sheet_page_layout(ws_single, is_heavy=is_heavy)
-        single_buf = io.BytesIO()
-        wb_single.save(single_buf)
-        single_buf.seek(0)
-        single_store_files[f"{store_id}_{store_name}"] = single_buf
-
-    for sheet in wb_out.worksheets:
-        sheet.sheet_view.tabSelected = True
-
-    output = io.BytesIO()
-    wb_out.save(output)
-    output.seek(0)
-
-    stats = {
-        "total_stores": len(summary_preview_data),
-        "heavy_stores": sum(1 for x in summary_preview_data if "Heavy" in x["Status"] or "พิมพ์แยก" in x["Status"]),
-        "normal_stores": sum(1 for x in summary_preview_data if "Normal" in x["Status"] or "พิมพ์รวม" in x["Status"]),
-        "total_pcs": sum(item["Total Pcs"] for item in summary_preview_data),
-        "preview_df": pd.DataFrame(summary_preview_data),
-        "single_files": single_store_files,
-    }
-
-    return output, stats
-
-
-# ==============================================================================
-# 4. ส่วนจัดวางหน้าตาเว็บ (Multi-language Layout)
-# ==============================================================================
-
-col_space, col_lang = st.columns([5, 1])
-with col_lang:
-    selected_lang = st.selectbox(
-        "🌐 Language / ภาษา",
-        ["🇹🇭 ไทย", "🇬🇧 English"],
-        index=0,
-        label_visibility="collapsed",
-    )
-
-lang_code = "TH" if "ไทย" in selected_lang else "EN"
-t = TEXTS[lang_code]
-
-if "processed_results" not in st.session_state:
-    st.session_state["processed_results"] = None
-
-if st.session_state["processed_results"] is None:
-    _, center_col, _ = st.columns([1, 2.2, 1])
-
-    with center_col:
-        st.markdown(
-            f"""
-            <div class="header-box">
-                <div class="header-title">{t['title']}</div>
-                <div class="header-subtitle">{t['subtitle']}</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        uploaded_files = st.file_uploader(
-            t["uploader_label"],
-            type=["xlsx"],
-            accept_multiple_files=True,
-        )
-
-        with st.expander(t["guide_title"]):
-            st.markdown(t["guide_content"], unsafe_allow_html=True)
-
-        if uploaded_files:
-            if st.button(t["btn_process"]):
-                processed_results = []
-                errors = []
-
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                for i, file in enumerate(uploaded_files):
-                    status_text.text(
-                        f"⏳ Processing ({i+1}/{len(uploaded_files)}): {file.name}"
-                    )
-                    try:
-                        out_bytes, stats = process_excel(
-                            file, lang_code=lang_code
-                        )
-                        processed_results.append((file.name, out_bytes, stats))
-                    except Exception as e:
-                        errors.append((file.name, str(e)))
-
-                    progress_bar.progress((i + 1) / len(uploaded_files))
-
-                status_text.empty()
-
-                if errors:
-                    for err_file, err_msg in errors:
-                        st.error(f"❌ `{err_file}`: {err_msg}")
-
-                if processed_results:
-                    st.session_state["processed_results"] = processed_results
-                    st.rerun()
-
-else:
-    processed_results = st.session_state["processed_results"]
-
-    st.markdown(
-        f"""
-        <div class="header-box">
-            <div class="header-title">{t['title']}</div>
-            <div class="header-subtitle">{t['subtitle']}</div>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    st.success(t["success"])
-
-    _, _, first_stats = processed_results[0]
-    df_preview = first_stats["preview_df"]
-
-    st.markdown(f"### {t['dashboard_title']}")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(
-        t["m_total_stores"],
-        f"{first_stats['total_stores']} {t['unit_store']}",
-    )
-    m2.metric(
-        t["m_heavy_stores"],
-        f"{first_stats['heavy_stores']} {t['unit_store']}",
-    )
-    m3.metric(
-        t["m_normal_stores"],
-        f"{first_stats['normal_stores']} {t['unit_store']}",
-    )
-    m4.metric(
-        t["m_total_pcs"], f"{first_stats['total_pcs']:,} {t['unit_pcs']}"
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_search, col_filter = st.columns([2, 1])
-    search_query = col_search.text_input(t["search_label"], "")
-    filter_status = col_filter.selectbox(
-        t["filter_label"],
-        [t["filter_all"], t["filter_normal"], t["filter_heavy"]],
-    )
-
-    filtered_df = df_preview.copy()
-    if search_query:
-        filtered_df = filtered_df[
-            filtered_df["Store ID"]
-            .str.contains(search_query, case=False, na=False)
-            | filtered_df["Store Name"].str.contains(
-                search_query, case=False, na=False
-            )
-        ]
-
-    if filter_status == t["filter_normal"]:
-        filtered_df = filtered_df[
-            filtered_df["Status"].str.contains("Normal|พิมพ์รวม")
-        ]
-    elif filter_status == t["filter_heavy"]:
-        filtered_df = filtered_df[
-            filtered_df["Status"].str.contains("Heavy|พิมพ์แยก")
-        ]
-
-    st.dataframe(filtered_df, use_container_width=True)
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    col_download, col_single = st.columns([1, 1])
-
-    with col_download:
-        st.markdown(f"#### {t['main_export']}")
-        if len(processed_results) == 1:
-            fname, fbytes, _ = processed_results[0]
-            out_name = f"Consolidated_{fname}"
-            st.download_button(
-                label=f"{t['btn_download_excel']} ({out_name})",
-                data=fbytes,
-                file_name=out_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        else:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(
-                zip_buffer, "w", zipfile.ZIP_DEFLATED
-            ) as zip_file:
-                for fname, fbytes, _ in processed_results:
-                    zip_file.writestr(
-                        f"Consolidated_{fname}", fbytes.getvalue()
-                    )
-
-            zip_buffer.seek(0)
-            st.download_button(
-                label=t["btn_download_zip"],
-                data=zip_buffer,
-                file_name="All_Consolidated_Lists.zip",
-                mime="application/zip",
-            )
-
-    with col_single:
-        st.markdown(f"#### {t['single_export']}")
-        selected_store_key = st.selectbox(
-            t["select_single"],
-            options=list(first_stats["single_files"].keys()),
-        )
-        if selected_store_key:
-            st.download_button(
-                label=f"{t['btn_single']} ({selected_store_key})",
-                data=first_stats["single_files"][selected_store_key],
-                file_name=f"Dispatch_{selected_store_key}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button(t["btn_reset"]):
-        st.session_state["processed_results"] = None
-        st.rerun()
-
+                

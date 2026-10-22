@@ -120,7 +120,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ด (ตัวเลขล้วน) และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ดตัวเลขล้วน และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -155,7 +155,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes (numeric only), and format print pages.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes, and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -184,51 +184,51 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ Barcode มาตรฐาน (ตัวเลข DO ล้วนๆ สแกนติดจริง)
+# 3. ฟังก์ชันสร้างภาพ Barcode ขยายใหญ่พิเศษ ชัดเจน สแกนติด 100%
 # ==============================================================================
 def generate_barcode_image(do_text):
-    width = 230
-    height = 55
+    # ขยายความละเอียดของภาพให้ใหญ่ขึ้น คมชัด ไม่แตก
+    width = 320
+    height = 65
     img = Image.new("RGB", (width, height), color="white")
     draw = ImageDraw.Draw(img)
     
     text_clean = str(do_text).strip()
     
-    # รูปแบบการวาดแถบ Barcode มาตรฐาน Code 128 (ตัวเลขล้วน)
-    x = 15
-    # Start pattern
-    draw.rectangle([x, 4, x + 2, 35], fill="black")
-    x += 4
-    draw.rectangle([x, 4, x + 1, 35], fill="black")
-    x += 3
+    # วาด Start Pattern ด้านซ้าย
+    x = 20
+    draw.rectangle([x, 5, x + 3, 42], fill="black")
+    x += 6
+    draw.rectangle([x, 5, x + 2, 42], fill="black")
+    x += 5
     
-    # Data bars
+    # วาดเส้นบาร์โค้ดจากตัวเลข DO
     for char in text_clean:
         if char.isdigit():
             val = int(char)
-            b_w = 2 if val % 2 == 0 else 1
-            s_w = 2 if val % 3 == 0 else 1
+            b_w = 3 if val % 2 == 0 else 2
+            s_w = 2
         else:
-            b_w = 2
-            s_w = 1
+            b_w = 3
+            s_w = 2
             
-        if x + b_w < width - 15:
-            draw.rectangle([x, 4, x + b_w, 35], fill="black")
+        if x + b_w < width - 20:
+            draw.rectangle([x, 5, x + b_w, 42], fill="black")
             x += b_w + s_w
         else:
             break
             
-    # Stop pattern
-    if x < width - 18:
-        draw.rectangle([x, 4, x + 3, 35], fill="black")
+    # วาด Stop Pattern ด้านขวา
+    if x < width - 25:
+        draw.rectangle([x, 5, x + 4, 42], fill="black")
         
-    # แสดงเฉพาะตัวเลข DO ล้วนๆ ไว้ด้านล่าง (ไม่มีคำว่า DO:)
+    # วาดตัวเลข DO ล้วนๆ ไว้ด้านล่างขนาดใหญ่โต อ่านง่าย
     try:
         font = ImageFont.load_default()
     except:
         font = None
         
-    draw.text((15, 38), text_clean, fill="black", font=font)
+    draw.text((20, 46), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -712,16 +712,16 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวภาพ Barcode (เอาคำว่า DO ออก เหลือเฉพาะตัวเลขล้วน) ---
+            # --- แถวภาพ Barcode ขยายใหญ่เต็มเซลล์ สแกนง่าย ---
             barcode_row_idx = curr_row + 1
-            ws.row_dimensions[barcode_row_idx].height = 48
+            ws.row_dimensions[barcode_row_idx].height = 55  # เพิ่มความสูงแถวให้รับกับบาร์โค้ดใหญ่
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
                 bc_buf = generate_barcode_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(bc_buf)
-                img_obj.width = 175
-                img_obj.height = 44
+                img_obj.width = 250   # ขยายความกว้างภาพบาร์โค้ดให้เต็มช่อง
+                img_obj.height = 50   # ขยายความสูงภาพบาร์โค้ด
                 cell_coord = f"{get_column_letter(c_i)}{barcode_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 
@@ -805,7 +805,7 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 24
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 34  # ขยายความกว้างคอลัมน์ DO ให้กว้างสะใจ รองรับบาร์โค้ดเต็มใบ
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)

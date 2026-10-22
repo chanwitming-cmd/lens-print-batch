@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_1](start_span)[span_1](end_span)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_2](start_span)[span_2](end_span).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -185,9 +185,9 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ QR Code จัดวางให้อยู่กึ่งกลางแนวตั้งพอดีเป๊ะ
+# 3. ฟังก์ชันสร้างภาพ QR Code พร้อมจัดกึ่งกลางแนวตั้งภายในแคนวาสของภาพ
 # ==============================================================================
-def generate_qr_with_text_image(do_text):
+def generate_qr_with_text_image(do_text, row_height_pt=36):
     text_clean = str(do_text).strip()
     
     qr = qrcode.QRCode(
@@ -200,17 +200,20 @@ def generate_qr_with_text_image(do_text):
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    # ขนาด QR Code (24x24 พิกเซล)
-    qr_size = 24
+    # แปลงความสูงจาก Point เป็นพิกเซลให้สอดคล้องกับขนาดเซลล์ใน Excel
+    img_height = int(row_height_pt * (96 / 72)) # เช่น 36 pt = 48 พิกเซล
+    img_width = 130
+    
+    # ขนาด QR Code ให้พอดีกับความสูงเซลล์
+    qr_size = img_height - 10 # เว้นขอบบนล่างรวม 10 พิกเซล
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # ขนาดภาพรวมในเซลล์ (กว้าง 130px, สูง 28px ให้พอดีกับความสูงแถว)
-    img_width = 130
-    img_height = 28
+    # สร้างแคนวาสขาวเต็มความสูงเซลล์
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
     
-    # วาง QR ไว้ทางซ้าย (Y = 2 เพื่อให้อยู่ตรงกลางพอดี ไม่ติดขอบบน)
-    combined_img.paste(qr_img, (6, 2))
+    # วาง QR ไว้ทางซ้าย โดยคำนวณตำแหน่ง Y ให้อยู่กึ่งกลางแนวตั้งเป๊ะๆ
+    y_qr = (img_height - qr_size) // 2
+    combined_img.paste(qr_img, (6, y_qr))
     
     draw = ImageDraw.Draw(combined_img)
     try:
@@ -218,8 +221,8 @@ def generate_qr_with_text_image(do_text):
     except:
         font = None
         
-    # วาดตัวเลข DO ให้อยู่ระดับกลางแนวตั้งพอดี
-    draw.text((36, 8), text_clean, fill="black", font=font)
+    # วาดตัวเลข DO ให้อยู่กึ่งกลางแนวตั้งเช่นเดียวกัน
+    draw.text((36, (img_height // 2) - 6), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -703,9 +706,10 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: ตั้งความสูงพอดี และเซ็ตขนาดรูปให้ไม่ล้น ---
+            # --- แถวหัวข้อ DO: กำหนดความสูง 36 pt และกำหนดขนาดรูปให้ตรงกับเซลล์เป๊ะ ---
             header_do_row_idx = curr_row
-            ws.row_dimensions[header_do_row_idx].height = 32
+            row_h_pt = 36
+            ws.row_dimensions[header_do_row_idx].height = row_h_pt
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
@@ -713,10 +717,11 @@ def process_excel(uploaded_file, lang_code="TH"):
                 cell_hdr.border = header_border
                 cell_hdr.alignment = Alignment(vertical="center", horizontal="center")
                 
-                qr_buf = generate_qr_with_text_image(do_n)
+                # ส่งค่าความสูงเซลล์ไปคำนวณตำแหน่งกึ่งกลางภายในรูปภาพ
+                qr_buf = generate_qr_with_text_image(do_n, row_height_pt=row_h_pt)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
-                img_obj.width = 115
-                img_obj.height = 25
+                img_obj.width = 120
+                img_obj.height = row_h_pt # บังคับขนาดความสูงรูปเท่ากับเซลล์เป๊ะๆ
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 

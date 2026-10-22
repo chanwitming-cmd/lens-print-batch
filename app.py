@@ -1,10 +1,9 @@
-import io
+Import io
 import math
-import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+import zipfile
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -119,9 +118,15 @@ TEXTS = {
         "guide_title": "📖 คำแนะนำและวิธีการใช้งานระบบ",
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
-            1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ดตัวเลขล้วน และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน (สามารถเลือกพร้อมกันได้หลายไฟล์)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO และตั้งค่าจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
+            
+            <hr style="margin: 10px 0;">
+            
+            **💡 สัญลักษณ์สีในไฟล์ Excel:**
+            * 🟢 **Tab สีเขียว (Normal):** สั่งกด Print รวมทั้งไฟล์ได้ทันที (ไม่เกิน 8 DO และไม่เกิน 35 แถว)
+            * 🔴 **Tab สีแดง (Heavy):** ต้องเปิดเข้าไปสั่ง Print แยกทีละ Sheet (เกิน 8 DO หรือเกิน 35 แถว)
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
         "dashboard_title": "📊 ภาพรวมการจัดส่ง (Interactive Dashboard)",
@@ -154,9 +159,15 @@ TEXTS = {
         "guide_title": "📖 System User Guide",
         "guide_content": """
             **🔹 Workflow Steps:**
-            1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes, and format print pages.
+            1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above (batch upload supported).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
+            
+            <hr style="margin: 10px 0;">
+            
+            **💡 Sheet Color Indicators in Excel:**
+            * 🟢 **Green Tabs (Normal):** Print entire workbook at once (≤ 8 DOs AND ≤ 35 rows).
+            * 🔴 **Red Tabs (Heavy):** Must print each sheet individually (> 8 DOs OR > 35 rows).
         """,
         "success": "✅ **Processing Completed Successfully!**",
         "dashboard_title": "📊 Dispatch Summary (Interactive Dashboard)",
@@ -184,54 +195,7 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ Barcode ตัวเลข DO ล้วนๆ
-# ==============================================================================
-def generate_barcode_image(do_text):
-    width = 320
-    height = 65
-    img = Image.new("RGB", (width, height), color="white")
-    draw = ImageDraw.Draw(img)
-    
-    text_clean = str(do_text).strip()
-    
-    x = 20
-    draw.rectangle([x, 5, x + 3, 42], fill="black")
-    x += 6
-    draw.rectangle([x, 5, x + 2, 42], fill="black")
-    x += 5
-    
-    for char in text_clean:
-        if char.isdigit():
-            val = int(char)
-            b_w = 3 if val % 2 == 0 else 2
-            s_w = 2
-        else:
-            b_w = 3
-            s_w = 2
-            
-        if x + b_w < width - 20:
-            draw.rectangle([x, 5, x + b_w, 42], fill="black")
-            x += b_w + s_w
-        else:
-            break
-            
-    if x < width - 25:
-        draw.rectangle([x, 5, x + 4, 42], fill="black")
-        
-    try:
-        font = ImageFont.load_default()
-    except:
-        font = None
-        
-    draw.text((20, 46), text_clean, fill="black", font=font)
-    
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
-# ==============================================================================
-# 4. ฟังก์ชันประมวลผล Excel
+# 3. ฟังก์ชันประมวลผล Excel
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -459,6 +423,7 @@ def process_excel(uploaded_file, lang_code="TH"):
             for c in st_cols
         )
 
+        # ข้ามสาขาที่ไม่มีเลนส์เลย (0 ชิ้น) เพื่อไม่ให้มีแถวขยะ
         if total_pcs == 0:
             continue
 
@@ -540,6 +505,7 @@ def process_excel(uploaded_file, lang_code="TH"):
     priority_stores = []
     normal_stores = []
 
+    # กรองเฉพาะกลุ่มสาขาที่มีสินค้าจริง
     valid_store_groups = []
     for store_id, group in store_groups:
         st_cols = group["col_idx"].tolist()
@@ -707,22 +673,20 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวภาพ Barcode ตัวเลข DO ล้วนๆ ---
-            barcode_row_idx = curr_row + 1
-            ws.row_dimensions[barcode_row_idx].height = 55
-            
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
-                bc_buf = generate_barcode_image(do_n)
-                img_obj = openpyxl.drawing.image.Image(bc_buf)
-                img_obj.width = 250
-                img_obj.height = 50
-                cell_coord = f"{get_column_letter(c_i)}{barcode_row_idx}"
-                ws.add_image(img_obj, cell_coord)
+                cell = ws.cell(row=curr_row, column=c_i, value=f"DO: {do_n}")
+                cell.font = Font(
+                    name="Cordia New", size=11, bold=True, color="000000"
+                )
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+                cell.border = header_border
 
-            curr_row += 2
             global_do_counter += chunk_num_dos
             max_col_idx = 4 + chunk_num_dos
+            curr_row += 1
             start_data_row = curr_row
 
             for row_data in chunk_items_list:
@@ -800,7 +764,7 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 34
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 13
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)

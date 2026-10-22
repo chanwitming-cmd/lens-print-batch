@@ -200,17 +200,17 @@ def generate_qr_with_text_image(do_text):
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    # ขนาด QR Code (26x26 พิกเซล)
-    qr_size = 26
+    # ขนาด QR Code (24x24 พิกเซล)
+    qr_size = 24
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # ขนาดภาพรวมในเซลล์ (กว้าง 140px, สูง 38px)
-    img_width = 140
-    img_height = 38
+    # ขนาดภาพรวมในเซลล์ (กว้าง 130px, สูง 28px ให้พอดีกับความสูงแถว)
+    img_width = 130
+    img_height = 28
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
     
-    # วาง QR ไว้ทางซ้าย ให้อยู่กึ่งกลางแนวตั้งพอดี (Y = 6)
-    combined_img.paste(qr_img, (6, 6))
+    # วาง QR ไว้ทางซ้าย (Y = 2 เพื่อให้อยู่ตรงกลางพอดี ไม่ติดขอบบน)
+    combined_img.paste(qr_img, (6, 2))
     
     draw = ImageDraw.Draw(combined_img)
     try:
@@ -218,8 +218,8 @@ def generate_qr_with_text_image(do_text):
     except:
         font = None
         
-    # วาดตัวเลข DO ให้อยู่ระดับเดียวกันกับ QR Code (Y = 12)
-    draw.text((38, 12), text_clean, fill="black", font=font)
+    # วาดตัวเลข DO ให้อยู่ระดับกลางแนวตั้งพอดี
+    draw.text((36, 8), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -703,9 +703,9 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: กำหนดความสูง 38 และเซ็ต Vertical Alignment เป็นกึ่งกลาง ---
+            # --- แถวหัวข้อ DO: ตั้งความสูงพอดี และเซ็ตขนาดรูปให้ไม่ล้น ---
             header_do_row_idx = curr_row
-            ws.row_dimensions[header_do_row_idx].height = 38
+            ws.row_dimensions[header_do_row_idx].height = 32
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
@@ -715,8 +715,8 @@ def process_excel(uploaded_file, lang_code="TH"):
                 
                 qr_buf = generate_qr_with_text_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
-                img_obj.width = 125
-                img_obj.height = 33
+                img_obj.width = 115
+                img_obj.height = 25
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 

@@ -102,7 +102,7 @@ custom_css = """
     div.stDownloadButton > button:first-child:hover {
         transform: translateY(-2px);
         box-shadow: 0 10px 22px rgba(16, 185, 129, 0.45);
-        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        background: linear-gradient(135deg, #059669 100%, #047857 100%);
     }
 </style>
 """
@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_1](start_span)[span_1](end_span)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_0](start_span)[span_0](end_span)
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_2](start_span)[span_2](end_span).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_1](start_span)[span_1](end_span).
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -204,13 +204,13 @@ def generate_qr_with_text_image(do_text):
     qr_size = 26
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # ขนาดภาพรวมในเซลล์ (กว้าง 140px, สูง 32px)
+    # ขนาดภาพรวมในเซลล์ (กว้าง 140px, สูง 38px ให้สูงขึ้นเพื่อให้มีพื้นที่หายใจ)
     img_width = 140
-    img_height = 32
+    img_height = 38
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
     
-    # ปรับพิกัด Y ให้ขยับขึ้นมาอยู่กึ่งกลางแนวตั้งพอดีเป๊ะ (ย้ายจาก 3 เป็น 2)
-    combined_img.paste(qr_img, (6, 2))
+    # วาง QR ไว้ทางซ้าย ให้อยู่กึ่งกลางแนวตั้งพอดี (Y = 6)
+    combined_img.paste(qr_img, (6, 6))
     
     draw = ImageDraw.Draw(combined_img)
     try:
@@ -218,8 +218,8 @@ def generate_qr_with_text_image(do_text):
     except:
         font = None
         
-    # ปรับพิกัดตัวหนังสือ Y ให้ตรงกึ่งกลางกับ QR Code
-    draw.text((38, 9), text_clean, fill="black", font=font)
+    # วาดตัวเลข DO ให้อยู่ระดับเดียวกันกับ QR Code (Y = 12)
+    draw.text((38, 12), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -703,9 +703,9 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: ขยับตำแหน่ง QR Code ให้อยู่กึ่งกลางแนวตั้งสวยงามพอดี ---
+            # --- แถวหัวข้อ DO: กำหนดความสูง 38 และวางภาพให้อยู่กึ่งกลางพอดีสวยงาม ---
             header_do_row_idx = curr_row
-            ws.row_dimensions[header_do_row_idx].height = 36
+            ws.row_dimensions[header_do_row_idx].height = 38
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
@@ -715,7 +715,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 qr_buf = generate_qr_with_text_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
                 img_obj.width = 125
-                img_obj.height = 30
+                img_obj.height = 33
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 

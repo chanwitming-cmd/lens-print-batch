@@ -83,7 +83,7 @@ custom_css = """
     div.stButton > button:first-child:hover {
         transform: translateY(-2px);
         box-shadow: 0 10px 22px rgba(37, 99, 235, 0.45);
-        background: linear-gradient(135deg, #1D4ED8 100%, #1E40AF 100%);
+        background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%);
     }
 
     div.stDownloadButton > button:first-child {
@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้าง QR Code ขนาดกะทัดรัดคู่กับตัวเลข DO และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_2](start_span)[span_2](end_span)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางช่องพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_0](start_span)[span_0](end_span)
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate optimized QR codes, and format print pages[span_3](start_span)[span_3](end_span).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_1](start_span)[span_1](end_span).
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -185,12 +185,12 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ QR Code ขนาดกะทัดรัด + ตัวเลข DO แบบเป๊ะตามรูปที่ 2 (8315.jpg)
+# 3. ฟังก์ชันสร้างภาพ QR Code จัดวางให้อยู่กึ่งกลางแนวตั้งพอดีเป๊ะ
 # ==============================================================================
 def generate_qr_with_text_image(do_text):
     text_clean = str(do_text).strip()
     
-    # สร้าง QR Code ด้านซ้าย (ขนาดพอเหมาะ สแกนง่าย)
+    # สร้าง QR Code ด้านซ้าย
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -201,7 +201,7 @@ def generate_qr_with_text_image(do_text):
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    # ปรับขนาด QR ให้กะทัดรัด (26x26 พิกเซล เหมือนรูปที่ 2)
+    # ขนาด QR Code (26x26 พิกเซล)
     qr_size = 26
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
@@ -210,17 +210,17 @@ def generate_qr_with_text_image(do_text):
     img_height = 32
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
     
-    # วาง QR ไว้ทางซ้ายเว้นขอบเล็กน้อย
+    # วาง QR ไว้ทางซ้าย โดยจัดกึ่งกลางแนวตั้ง (y = (32 - 26) / 2 = 3)
     combined_img.paste(qr_img, (6, 3))
     
-    # วาดตัวเลข DO ไว้ทางขวาของ QR ให้อยู่ระดับเดียวกันพอดี
+    # วาดตัวเลข DO ไว้ทางขวา โดยปรับตำแหน่ง y ให้ลงมาอยู่กึ่งกลางแนวตั้งพอดี
     draw = ImageDraw.Draw(combined_img)
     try:
         font = ImageFont.load_default()
     except:
         font = None
         
-    draw.text((38, 9), text_clean, fill="black", font=font)
+    draw.text((38, 10), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -704,9 +704,9 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: QR Code เล็กกะทัดรัด (ซ้าย) + ตัวเลข DO (ขวา) อยู่ในบรรทัดเดียวกันเป๊ะเหมือนรูปที่ 2 ---
+            # --- แถวหัวข้อ DO: ปรับความสูงแถวและพิกัดรูปให้อยู่กึ่งกลางแนวตั้งพอดี ---
             header_do_row_idx = curr_row
-            ws.row_dimensions[header_do_row_idx].height = 32
+            ws.row_dimensions[header_do_row_idx].height = 36
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
@@ -800,7 +800,7 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 19  # ปรับความกว้างให้พอดีสวยงามเหมือนรูปที่ 2
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 19
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)

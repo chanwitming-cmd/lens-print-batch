@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะแยก QR Code กับเลข DO ให้เป็นอิสระต่อกัน คมชัด และจัดขนาดพอดีกับคอลัมน์
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดวาง QR Code และเลข DO ไม่ให้ทับกัน คมชัด และพอดีกับช่อง
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to separate QR and DO text cleanly, with sharp high-res rendering.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to format QR and DO text without overlapping.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -185,7 +185,7 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างเฉพาะภาพ QR Code ล้วนๆ (คมชัด ไม่ติดตัวหนังสือ)
+# 3. ฟังก์ชันสร้างภาพ QR Code 
 # ==============================================================================
 def generate_pure_qr_image(do_text):
     text_clean = str(do_text).strip()
@@ -193,7 +193,7 @@ def generate_pure_qr_image(do_text):
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=4,  # เพิ่มความละเอียดให้ QR คมชัด ไม่แตกเวลาพิมพ์
+        box_size=4,
         border=1,
     )
     qr.add_data(text_clean)
@@ -682,7 +682,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: แยก QR (ซ้าย) กับ เลข DO (ขวาแบบ Text ชัดเจน) ---
+            # --- แถวหัวข้อ DO: ปรับขนาด QR ให้พอดี ไม่ทับเลข DO ที่เป็น Text ---
             header_do_row_idx = curr_row
             row_h_pt = 36
             ws.row_dimensions[header_do_row_idx].height = row_h_pt
@@ -692,18 +692,18 @@ def process_excel(uploaded_file, lang_code="TH"):
                 cell_hdr = ws.cell(row=header_do_row_idx, column=c_i)
                 cell_hdr.border = header_border
                 
-                # ใส่เลข DO เป็นข้อความจริงใน Excel (คมชัด 100%)
-                cell_hdr.value = f"       {str(do_n).strip()}"
+                # เว้นวรรคด้านหน้าให้เลข DO ขยับไปทางขวา ไม่โดน QR ทับ
+                cell_hdr.value = f"          {str(do_n).strip()}"
                 cell_hdr.font = Font(name="Cordia New", size=11, bold=True, color="000000")
                 cell_hdr.alignment = Alignment(vertical="center", horizontal="left")
                 
-                # สร้างภาพ QR ล้วนๆ (คมชัด ไม่แตก) แล้วแปะไว้ทางซ้าย
+                # สร้างภาพ QR ล้วนๆ
                 qr_buf = generate_pure_qr_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
                 
-                # ปรับขนาด QR ให้ใหญ่ขึ้นเต็มความสูงเซลล์พอดิบพอดี
-                img_obj.height = int(row_h_pt * 1.25)
-                img_obj.width = int(row_h_pt * 1.25)
+                # ลดขนาดความกว้าง QR ลงให้อยู่ซ้ายพอดี ไม่ทับตัวหนังสือ
+                img_obj.height = int(row_h_pt * 0.85)
+                img_obj.width = int(row_h_pt * 0.85)
                 
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
@@ -788,9 +788,9 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         
-        # ปรับความกว้างคอลัมน์ DO ให้พอดีเป๊ะ ไม่เหลือพื้นที่ว่าง
+        # ขยายความกว้างคอลัมน์ DO เพิ่มขึ้นอีกนิดเพื่อให้มีพื้นที่โชว์เลข DO ชัดๆ
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 17
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 20
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)

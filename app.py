@@ -4,6 +4,8 @@ import zipfile
 import openpyxl
 import pandas as pd
 import streamlit as st
+import qrcode
+from PIL import Image
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -119,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้าง QR Code (ตัวเลข DO ล้วน) และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -154,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, and format print pages.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate QR codes, and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -183,7 +185,30 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันประมวลผล Excel
+# 3. ฟังก์ชันสร้าง QR Code มาตรฐาน (ตัวเลข DO ล้วน สแกนติด 100%)
+# ==============================================================================
+def generate_qrcode_image(do_text):
+    text_clean = str(do_text).strip()
+    
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=6,
+        border=1,
+    )
+    qr.add_data(text_clean)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    img = img.resize((70, 70), Image.Resampling.LANCZOS)
+    
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+# ==============================================================================
+# 4. ฟังก์ชันประมวลผล Excel
 # ==============================================================================
 def parse_num(val):
     if pd.isna(val) or val == "" or val is None:
@@ -659,18 +684,30 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวเลข DO ขนาดใหญ่ ชัดเจน ป้องกัน Error และสแกนง่าย ---
-            do_row_idx = curr_row + 1
-            ws.row_dimensions[do_row_idx].height = 35
+            # --- แถว QR Code และข้อความตัวเลข DO ด้านล่าง ---
+            qr_row_idx = curr_row + 1
+            ws.row_dimensions[qr_row_idx].height = 60  # ปรับความสูงแถวรับ QR Code
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
-                cell_do = ws.cell(row=do_row_idx, column=c_i, value=str(do_n))
-                cell_do.font = Font(name="Cordia New", size=14, bold=True, color="000000")
+                qr_buf = generate_qrcode_image(do_n)
+                img_obj = openpyxl.drawing.image.Image(qr_buf)
+                img_obj.width = 60
+                img_obj.height = 60
+                cell_coord = f"{get_column_letter(c_i)}{qr_row_idx}"
+                ws.add_image(img_obj, cell_coord)
+
+            # แถวข้อความตัวเลข DO ล้วนๆ ใต้ QR Code
+            text_row_idx = curr_row + 2
+            ws.row_dimensions[text_row_idx].height = 20
+            for idx_q, do_n in enumerate(chunk_do_nums):
+                c_i = 5 + idx_q
+                cell_do = ws.cell(row=text_row_idx, column=c_i, value=str(do_n))
+                cell_do.font = Font(name="Cordia New", size=12, bold=True, color="000000")
                 cell_do.alignment = Alignment(horizontal="center", vertical="center")
                 cell_do.border = box_border
 
-            curr_row += 2
+            curr_row += 3  # ข้ามหัวข้อ, แถว QR Code, และแถวตัวเลข DO
             global_do_counter += chunk_num_dos
             max_col_idx = 4 + chunk_num_dos
             start_data_row = curr_row

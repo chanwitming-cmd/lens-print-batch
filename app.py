@@ -185,9 +185,9 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ QR Code พร้อมจัดกึ่งกลางแนวตั้งภายในแคนวาสของภาพ
+# 3. ฟังก์ชันสร้างภาพ QR Code พร้อมจัดกึ่งกลางภายในตัวภาพแบบเบ็ดเสร็จ
 # ==============================================================================
-def generate_qr_with_text_image(do_text, row_height_pt=36):
+def generate_qr_with_text_image(do_text):
     text_clean = str(do_text).strip()
     
     qr = qrcode.QRCode(
@@ -200,20 +200,19 @@ def generate_qr_with_text_image(do_text, row_height_pt=36):
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    # แปลงความสูงจาก Point เป็นพิกเซลให้สอดคล้องกับขนาดเซลล์ใน Excel
-    img_height = int(row_height_pt * (96 / 72)) # เช่น 36 pt = 48 พิกเซล
-    img_width = 130
+    # กำหนดขนาดแคนวาสภาพให้สัมพันธ์กับความสูงของเซลล์ Excel (ความสูง 36 pt หรือประมาณ 48 px)
+    canvas_width = 130
+    canvas_height = 48
     
-    # ขนาด QR Code ให้พอดีกับความสูงเซลล์
-    qr_size = img_height - 10 # เว้นขอบบนล่างรวม 10 พิกเซล
+    qr_size = 36  # ขนาด QR Code ให้สูงเกือบเต็มเซลล์แต่เว้นขอบนิดหน่อย
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # สร้างแคนวาสขาวเต็มความสูงเซลล์
-    combined_img = Image.new("RGB", (img_width, img_height), color="white")
+    # สร้างภาพพื้นหลังสีขาวขนาดเท่าเซลล์เป๊ะๆ
+    combined_img = Image.new("RGB", (canvas_width, canvas_height), color="white")
     
-    # วาง QR ไว้ทางซ้าย โดยคำนวณตำแหน่ง Y ให้อยู่กึ่งกลางแนวตั้งเป๊ะๆ
-    y_qr = (img_height - qr_size) // 2
-    combined_img.paste(qr_img, (6, y_qr))
+    # คำนวณตำแหน่ง Y ให้อยู่กึ่งกลางแนวตั้งของแคนวาสเป๊ะๆ (Vertical Center)
+    y_pos = (canvas_height - qr_size) // 2
+    combined_img.paste(qr_img, (6, y_pos))
     
     draw = ImageDraw.Draw(combined_img)
     try:
@@ -221,8 +220,9 @@ def generate_qr_with_text_image(do_text, row_height_pt=36):
     except:
         font = None
         
-    # วาดตัวเลข DO ให้อยู่กึ่งกลางแนวตั้งเช่นเดียวกัน
-    draw.text((36, (img_height // 2) - 6), text_clean, fill="black", font=font)
+    # คำนวณตำแหน่งตัวหนังสือ DO ให้อยู่กึ่งกลางแนวตั้งร่วมกับ QR Code
+    text_y_pos = (canvas_height // 2) - 6
+    draw.text((46, text_y_pos), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -706,22 +706,20 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: กำหนดความสูง 36 pt และกำหนดขนาดรูปให้ตรงกับเซลล์เป๊ะ ---
+            # --- แถวหัวข้อ DO: ล็อกความสูงเซลล์ไว้ที่ 36 pt และกำหนดขนาดรูปให้ตรงกันเป๊ะ ---
             header_do_row_idx = curr_row
-            row_h_pt = 36
-            ws.row_dimensions[header_do_row_idx].height = row_h_pt
+            ws.row_dimensions[header_do_row_idx].height = 36
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
                 cell_hdr = ws.cell(row=header_do_row_idx, column=c_i)
                 cell_hdr.border = header_border
-                cell_hdr.alignment = Alignment(vertical="center", horizontal="center")
                 
-                # ส่งค่าความสูงเซลล์ไปคำนวณตำแหน่งกึ่งกลางภายในรูปภาพ
-                qr_buf = generate_qr_with_text_image(do_n, row_height_pt=row_h_pt)
+                qr_buf = generate_qr_with_text_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
-                img_obj.width = 120
-                img_obj.height = row_h_pt # บังคับขนาดความสูงรูปเท่ากับเซลล์เป๊ะๆ
+                # กำหนดสัดส่วนรูปให้เต็มเซลล์พอดี ไม่เกิดช่องว่างและไม่ล้น
+                img_obj.width = 110
+                img_obj.height = 36
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 

@@ -120,7 +120,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ด และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้างบาร์โค้ด (ตัวเลขล้วน) และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -155,7 +155,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes, and format print pages.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate barcodes (numeric only), and format print pages.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -175,7 +175,7 @@ TEXTS = {
         "btn_download_zip": "📦 Download All Files as ZIP",
         "select_single": "Select specific store to download:",
         "btn_single": "📄 Download Store File",
-        "btn_reset": "Upload New Files",
+        "btn_reset": "🔄 Upload New Files",
         "unit_store": "Stores",
         "unit_pcs": "Pcs",
         "status_normal": "🟢 Batch Print (Normal)",
@@ -184,7 +184,7 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ Barcode มาตรฐาน Code 128 รองรับเครื่องสแกน 100%
+# 3. ฟังก์ชันสร้างภาพ Barcode มาตรฐาน (ตัวเลข DO ล้วนๆ สแกนติดจริง)
 # ==============================================================================
 def generate_barcode_image(do_text):
     width = 230
@@ -194,38 +194,41 @@ def generate_barcode_image(do_text):
     
     text_clean = str(do_text).strip()
     
-    # รูปแบบความกว้างแถบมาตรฐาน Code 128 จำลองจำแนกตามรหัสตัวเลข
-    # เริ่มต้นด้วย Start Bar (ขีดสลับมาตรฐาน)
+    # รูปแบบการวาดแถบ Barcode มาตรฐาน Code 128 (ตัวเลขล้วน)
     x = 15
-    draw.rectangle([x, 4, x + 2, 35], fill="black") # Start
+    # Start pattern
+    draw.rectangle([x, 4, x + 2, 35], fill="black")
     x += 4
     draw.rectangle([x, 4, x + 1, 35], fill="black")
     x += 3
     
-    # วาดลายเส้นบาร์โค้ดจากแต่ละตัวอักษรของ DO
+    # Data bars
     for char in text_clean:
-        val = ord(char)
-        b_w = 3 if val % 2 == 0 else 1
-        s_w = 2 if val % 3 == 0 else 1
-        
+        if char.isdigit():
+            val = int(char)
+            b_w = 2 if val % 2 == 0 else 1
+            s_w = 2 if val % 3 == 0 else 1
+        else:
+            b_w = 2
+            s_w = 1
+            
         if x + b_w < width - 15:
             draw.rectangle([x, 4, x + b_w, 35], fill="black")
             x += b_w + s_w
         else:
             break
             
-    # วาด Stop Bar ปิดท้ายบาร์โค้ด
+    # Stop pattern
     if x < width - 18:
         draw.rectangle([x, 4, x + 3, 35], fill="black")
         
-    # วาดข้อความเลข DO ไว้ใต้บาร์โค้ด
+    # แสดงเฉพาะตัวเลข DO ล้วนๆ ไว้ด้านล่าง (ไม่มีคำว่า DO:)
     try:
         font = ImageFont.load_default()
     except:
         font = None
         
-    label_text = f"DO: {text_clean}"
-    draw.text((15, 38), label_text, fill="black", font=font)
+    draw.text((15, 38), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -709,7 +712,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวภาพ Barcode ที่ปรับความสูงและสัดส่วนให้ยิงสแกนง่าย ---
+            # --- แถวภาพ Barcode (เอาคำว่า DO ออก เหลือเฉพาะตัวเลขล้วน) ---
             barcode_row_idx = curr_row + 1
             ws.row_dimensions[barcode_row_idx].height = 48
             
@@ -817,216 +820,4 @@ def process_excel(uploaded_file, lang_code="TH"):
         setup_sheet_page_layout(ws_single, is_heavy=is_heavy)
         single_buf = io.BytesIO()
         wb_single.save(single_buf)
-        single_buf.seek(0)
-        single_store_files[f"{store_id}_{store_name}"] = single_buf
-
-    for sheet in wb_out.worksheets:
-        sheet.sheet_view.tabSelected = True
-
-    output = io.BytesIO()
-    wb_out.save(output)
-    output.seek(0)
-
-    stats = {
-        "total_stores": len(summary_preview_data),
-        "heavy_stores": sum(1 for x in summary_preview_data if "Heavy" in x["Status"] or "พิมพ์แยก" in x["Status"]),
-        "normal_stores": sum(1 for x in summary_preview_data if "Normal" in x["Status"] or "พิมพ์รวม" in x["Status"]),
-        "total_pcs": sum(item["Total Pcs"] for item in summary_preview_data),
-        "preview_df": pd.DataFrame(summary_preview_data),
-        "single_files": single_store_files,
-    }
-
-    return output, stats
-
-
-# ==============================================================================
-# 4. ส่วนจัดวางหน้าตาเว็บ (Multi-language Layout)
-# ==============================================================================
-
-col_space, col_lang = st.columns([5, 1])
-with col_lang:
-    selected_lang = st.selectbox(
-        "🌐 Language / ภาษา",
-        ["🇹🇭 ไทย", "🇬🇧 English"],
-        index=0,
-        label_visibility="collapsed",
-    )
-
-lang_code = "TH" if "ไทย" in selected_lang else "EN"
-t = TEXTS[lang_code]
-
-if "processed_results" not in st.session_state:
-    st.session_state["processed_results"] = None
-
-if st.session_state["processed_results"] is None:
-    _, center_col, _ = st.columns([1, 2.2, 1])
-
-    with center_col:
-        st.markdown(
-            f"""
-            <div class="header-box">
-                <div class="header-title">{t['title']}</div>
-                <div class="header-subtitle">{t['subtitle']}</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        uploaded_files = st.file_uploader(
-            t["uploader_label"],
-            type=["xlsx"],
-            accept_multiple_files=True,
-        )
-
-        with st.expander(t["guide_title"]):
-            st.markdown(t["guide_content"], unsafe_allow_html=True)
-
-        if uploaded_files:
-            if st.button(t["btn_process"]):
-                processed_results = []
-                errors = []
-
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                for i, file in enumerate(uploaded_files):
-                    status_text.text(
-                        f"⏳ Processing ({i+1}/{len(uploaded_files)}): {file.name}"
-                    )
-                    try:
-                        out_bytes, stats = process_excel(
-                            file, lang_code=lang_code
-                        )
-                        processed_results.append((file.name, out_bytes, stats))
-                    except Exception as e:
-                        errors.append((file.name, str(e)))
-
-                    progress_bar.progress((i + 1) / len(uploaded_files))
-
-                status_text.empty()
-
-                if errors:
-                    for err_file, err_msg in errors:
-                        st.error(f"❌ `{err_file}`: {err_msg}")
-
-                if processed_results:
-                    st.session_state["processed_results"] = processed_results
-                    st.rerun()
-
-else:
-    processed_results = st.session_state["processed_results"]
-
-    st.markdown(
-        f"""
-        <div class="header-box">
-            <div class="header-title">{t['title']}</div>
-            <div class="header-subtitle">{t['subtitle']}</div>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    st.success(t["success"])
-
-    _, _, first_stats = processed_results[0]
-    df_preview = first_stats["preview_df"]
-
-    st.markdown(f"### {t['dashboard_title']}")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(
-        t["m_total_stores"],
-        f"{first_stats['total_stores']} {t['unit_store']}",
-    )
-    m2.metric(
-        t["m_heavy_stores"],
-        f"{first_stats['heavy_stores']} {t['unit_store']}",
-    )
-    m3.metric(
-        t["m_normal_stores"],
-        f"{first_stats['normal_stores']} {t['unit_store']}",
-    )
-    m4.metric(
-        t["m_total_pcs"], f"{first_stats['total_pcs']:,} {t['unit_pcs']}"
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_search, col_filter = st.columns([2, 1])
-    search_query = col_search.text_input(t["search_label"], "")
-    filter_status = col_filter.selectbox(
-        t["filter_label"],
-        [t["filter_all"], t["filter_normal"], t["filter_heavy"]],
-    )
-
-    filtered_df = df_preview.copy()
-    if search_query:
-        filtered_df = filtered_df[
-            filtered_df["Store ID"]
-            .str.contains(search_query, case=False, na=False)
-            | filtered_df["Store Name"].str.contains(
-                search_query, case=False, na=False
-            )
-        ]
-
-    if filter_status == t["filter_normal"]:
-        filtered_df = filtered_df[
-            filtered_df["Status"].str.contains("Normal|พิมพ์รวม")
-        ]
-    elif filter_status == t["filter_heavy"]:
-        filtered_df = filtered_df[
-            filtered_df["Status"].str.contains("Heavy|พิมพ์แยก")
-        ]
-
-    st.dataframe(filtered_df, use_container_width=True)
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    col_download, col_single = st.columns([1, 1])
-
-    with col_download:
-        st.markdown(f"#### {t['main_export']}")
-        if len(processed_results) == 1:
-            fname, fbytes, _ = processed_results[0]
-            out_name = f"Consolidated_{fname}"
-            st.download_button(
-                label=f"{t['btn_download_excel']} ({out_name})",
-                data=fbytes,
-                file_name=out_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        else:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(
-                zip_buffer, "w", zipfile.ZIP_DEFLATED
-            ) as zip_file:
-                for fname, fbytes, _ in processed_results:
-                    zip_file.writestr(
-                        f"Consolidated_{fname}", fbytes.getvalue()
-                    )
-
-            zip_buffer.seek(0)
-            st.download_button(
-                label=t["btn_download_zip"],
-                data=zip_buffer,
-                file_name="All_Consolidated_Lists.zip",
-                mime="application/zip",
-            )
-
-    with col_single:
-        st.markdown(f"#### {t['single_export']}")
-        selected_store_key = st.selectbox(
-            t["select_single"],
-            options=list(first_stats["single_files"].keys()),
-        )
-        if selected_store_key:
-            st.download_button(
-                label=f"{t['btn_single']} ({selected_store_key})",
-                data=first_stats["single_files"][selected_store_key],
-                file_name=f"Dispatch_{selected_store_key}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button(t["btn_reset"]):
-        st.session_state["processed_results"] = None
-        st.rerun()
+        single_buf.

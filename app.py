@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_0](start_span)[span_0](end_span)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่กึ่งกลางพอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_1](start_span)[span_1](end_span)
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_1](start_span)[span_1](end_span).
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages[span_2](start_span)[span_2](end_span).
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -204,7 +204,7 @@ def generate_qr_with_text_image(do_text):
     qr_size = 26
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # ขนาดภาพรวมในเซลล์ (กว้าง 140px, สูง 38px ให้สูงขึ้นเพื่อให้มีพื้นที่หายใจ)
+    # ขนาดภาพรวมในเซลล์ (กว้าง 140px, สูง 38px)
     img_width = 140
     img_height = 38
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
@@ -703,7 +703,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: กำหนดความสูง 38 และวางภาพให้อยู่กึ่งกลางพอดีสวยงาม ---
+            # --- แถวหัวข้อ DO: กำหนดความสูง 38 และเซ็ต Vertical Alignment เป็นกึ่งกลาง ---
             header_do_row_idx = curr_row
             ws.row_dimensions[header_do_row_idx].height = 38
             
@@ -711,6 +711,7 @@ def process_excel(uploaded_file, lang_code="TH"):
                 c_i = 5 + idx_q
                 cell_hdr = ws.cell(row=header_do_row_idx, column=c_i)
                 cell_hdr.border = header_border
+                cell_hdr.alignment = Alignment(vertical="center", horizontal="center")
                 
                 qr_buf = generate_qr_with_text_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)

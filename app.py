@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้าง QR Code ควบคู่ตัวเลข และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ[span_0](start_span)[span_0](end_span)
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO สร้าง QR Code (ซ้าย) และตัวเลข DO (ขวา) ในช่องเดียวกันให้อัตโนมัติ[span_0](start_span)[span_0](end_span)
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate side-by-side QR codes, and format print pages.[span_1](start_span)[span_1](end_span)
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, generate side-by-side QR codes, and format print pages[span_1](start_span)[span_1](end_span).
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -185,41 +185,41 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ QR Code + ตัวเลข DO แบบ Side-by-side (ซ้าย QR / ขวา ตัวเลข)
+# 3. ฟังก์ชันสร้างภาพ QR Code + ตัวเลข DO แบบรวมเป็นรูปเดียว (ซ้าย QR / ขวา ตัวเลข)
 # ==============================================================================
 def generate_qr_with_text_image(do_text):
     text_clean = str(do_text).strip()
     
-    # สร้าง QR Code ด้านซ้าย
+    # สร้าง QR Code ด้านซ้าย (ขนาดกะทัดรัด)
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=3,
+        box_size=2,
         border=1,
     )
     qr.add_data(text_clean)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    qr_size = 36
+    qr_size = 32
     qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
     
-    # สร้างภาพรวมขนาดพอดีช่องเซลล์ (กว้าง 135px, สูง 42px)
-    img_width = 135
-    img_height = 42
+    # ขนาดภาพรวมในเซลล์ (กว้าง 150px, สูง 38px)
+    img_width = 150
+    img_height = 38
     combined_img = Image.new("RGB", (img_width, img_height), color="white")
     
-    # วาง QR ไว้ทางซ้าย
-    combined_img.paste(qr_img, (3, 3))
+    # แปะ QR ไว้ทางซ้าย
+    combined_img.paste(qr_img, (4, 3))
     
-    # วาดตัวเลข DO ไว้ทางขวา
+    # วาดตัวเลข DO ไว้ทางขวาของ QR
     draw = ImageDraw.Draw(combined_img)
     try:
         font = ImageFont.load_default()
     except:
         font = None
         
-    draw.text((44, 14), text_clean, fill="black", font=font)
+    draw.text((42, 12), text_clean, fill="black", font=font)
     
     buf = io.BytesIO()
     combined_img.save(buf, format="PNG")
@@ -703,22 +703,20 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวรวม QR Code + ตัวเลข DO แบบ Side-by-side ในแถวเดียว ---
-            qr_text_row_idx = curr_row
-            ws.row_dimensions[qr_text_row_idx].height = 36
+            # --- แถวหัวข้อ DO: รวม QR Code (ซ้าย) + ตัวเลข DO (ขวา) ให้อยู่ในแถวเดียวกัน ---
+            header_do_row_idx = curr_row
+            ws.row_dimensions[header_do_row_idx].height = 36
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
-                # ใส่กรอบให้ช่องหัวข้อ DO
-                cell_hdr = ws.cell(row=qr_text_row_idx, column=c_i)
+                cell_hdr = ws.cell(row=header_do_row_idx, column=c_i)
                 cell_hdr.border = header_border
                 
-                # แทรกภาพ QR + ตัวเลขที่รวมกันแล้วลงในเซลล์
                 qr_buf = generate_qr_with_text_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
-                img_obj.width = 130
-                img_obj.height = 38
-                cell_coord = f"{get_column_letter(c_i)}{qr_text_row_idx}"
+                img_obj.width = 140
+                img_obj.height = 36
+                cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
 
             curr_row += 1
@@ -801,7 +799,7 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 21  # ขนาดพอดีกับภาพ QR + ข้อความด้านข้าง
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 22  # ปรับความกว้างช่อง DO ให้พอดีสวยงาม
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)

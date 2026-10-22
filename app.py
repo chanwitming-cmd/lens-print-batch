@@ -5,7 +5,7 @@ import openpyxl
 import pandas as pd
 import streamlit as st
 import qrcode
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -121,7 +121,7 @@ TEXTS = {
         "guide_content": """
             **🔹 ขั้นตอนการทำงาน:**
             1. **อัปโหลดไฟล์:** ลากไฟล์รายงาน Excel ต้นฉบับ (.xlsx) มาวางในช่องด้านบน
-            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะจัดกลุ่มสาขา เรียงลำดับ DO จัดวาง QR Code ให้อยู่ข้างในเซลล์พอดี และจัดหน้ากระดาษพิมพ์ให้อัตโนมัติ
+            2. **ประมวลผล:** กดปุ่ม **"🚀 ประมวลผลและแปลงไฟล์ทั้งหมด"** ระบบจะแยก QR Code กับเลข DO ให้เป็นอิสระต่อกัน คมชัด และจัดขนาดพอดีกับคอลัมน์
             3. **ตรวจสอบ & ดาวน์โหลด:** ดูสถิติภาพรวมบนตาราง และดาวน์โหลดไฟล์ Excel สรุปผลไปสั่งพิมพ์ได้ทันที
         """,
         "success": "✅ **ประมวลผลสำเร็จเรียบร้อย!**",
@@ -156,7 +156,7 @@ TEXTS = {
         "guide_content": """
             **🔹 Workflow Steps:**
             1. **Upload Files:** Drag & drop original Excel reports (.xlsx) into the drop zone above.
-            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to auto-group stores, sort DOs, center-align QR codes, and format print pages.
+            2. **Process Data:** Click **"🚀 Process & Convert All Files"** to separate QR and DO text cleanly, with sharp high-res rendering.
             3. **Review & Download:** Inspect summary statistics and download print-ready Excel files immediately.
         """,
         "success": "✅ **Processing Completed Successfully!**",
@@ -185,44 +185,23 @@ TEXTS = {
 }
 
 # ==============================================================================
-# 3. ฟังก์ชันสร้างภาพ QR Code ขนาดเล็กกะทัดรัดให้อยู่ข้างในเซลล์พอดีเป๊ะ
+# 3. ฟังก์ชันสร้างเฉพาะภาพ QR Code ล้วนๆ (คมชัด ไม่ติดตัวหนังสือ)
 # ==============================================================================
-def generate_qr_with_text_image(do_text):
+def generate_pure_qr_image(do_text):
     text_clean = str(do_text).strip()
     
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=2,
+        box_size=4,  # เพิ่มความละเอียดให้ QR คมชัด ไม่แตกเวลาพิมพ์
         border=1,
     )
     qr.add_data(text_clean)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     
-    # ย่อขนาด QR Code ให้เล็กลง เพื่อให้อยู่ข้างในเซลล์แบบไม่ล้นขอบ
-    qr_size = 28
-    qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-    
-    # กำหนดขนาดภาพรวมให้พอดีเป๊ะ (ไม่ออกนอกกรอบเซลล์)
-    canvas_width = 100
-    canvas_height = 32
-    combined_img = Image.new("RGB", (canvas_width, canvas_height), color="white")
-    
-    # วางไว้ชิดซ้ายเว้นขอบนิดหน่อย
-    combined_img.paste(qr_img, (4, 2))
-    
-    draw = ImageDraw.Draw(combined_img)
-    try:
-        font = ImageFont.load_default()
-    except:
-        font = None
-        
-    # วาดตัวหนังสือ DO ข้างๆ QR Code
-    draw.text((36, 9), text_clean, fill="black", font=font)
-    
     buf = io.BytesIO()
-    combined_img.save(buf, format="PNG")
+    qr_img.save(buf, format="PNG")
     buf.seek(0)
     return buf
 
@@ -703,21 +682,28 @@ def process_excel(uploaded_file, lang_code="TH"):
                 )
                 cell.border = header_border
 
-            # --- แถวหัวข้อ DO: กำหนดความสูง 32 pt เพื่อให้ภาพเข้าไปอยู่ข้างในเซลล์พอดี ไม่ล้น ---
+            # --- แถวหัวข้อ DO: แยก QR (ซ้าย) กับ เลข DO (ขวาแบบ Text ชัดเจน) ---
             header_do_row_idx = curr_row
-            ws.row_dimensions[header_do_row_idx].height = 32
+            row_h_pt = 36
+            ws.row_dimensions[header_do_row_idx].height = row_h_pt
             
             for idx_q, do_n in enumerate(chunk_do_nums):
                 c_i = 5 + idx_q
                 cell_hdr = ws.cell(row=header_do_row_idx, column=c_i)
                 cell_hdr.border = header_border
                 
-                qr_buf = generate_qr_with_text_image(do_n)
+                # ใส่เลข DO เป็นข้อความจริงใน Excel (คมชัด 100%)
+                cell_hdr.value = f"       {str(do_n).strip()}"
+                cell_hdr.font = Font(name="Cordia New", size=11, bold=True, color="000000")
+                cell_hdr.alignment = Alignment(vertical="center", horizontal="left")
+                
+                # สร้างภาพ QR ล้วนๆ (คมชัด ไม่แตก) แล้วแปะไว้ทางซ้าย
+                qr_buf = generate_pure_qr_image(do_n)
                 img_obj = openpyxl.drawing.image.Image(qr_buf)
                 
-                # ล็อกขนาดภาพให้อยู่ภายในกรอบเซลล์แบบพอดีเป๊ะ
-                img_obj.width = 95
-                img_obj.height = 28
+                # ปรับขนาด QR ให้ใหญ่ขึ้นเต็มความสูงเซลล์พอดิบพอดี
+                img_obj.height = int(row_h_pt * 1.25)
+                img_obj.width = int(row_h_pt * 1.25)
                 
                 cell_coord = f"{get_column_letter(c_i)}{header_do_row_idx}"
                 ws.add_image(img_obj, cell_coord)
@@ -801,8 +787,10 @@ def process_excel(uploaded_file, lang_code="TH"):
         ws.column_dimensions["B"].width = 24
         ws.column_dimensions["C"].width = 9
         ws.column_dimensions["D"].width = 9
+        
+        # ปรับความกว้างคอลัมน์ DO ให้พอดีเป๊ะ ไม่เหลือพื้นที่ว่าง
         for idx_q in range(min(8, num_dos)):
-            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 19
+            ws.column_dimensions[get_column_letter(5 + idx_q)].width = 17
 
         wb_single = openpyxl.Workbook()
         wb_single.remove(wb_single.active)
